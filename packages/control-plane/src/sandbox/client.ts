@@ -6,6 +6,9 @@
  */
 
 import { generateInternalToken } from "@open-inspect/shared";
+import { createLogger } from "../logger";
+
+const log = createLogger("modal-client");
 
 // Modal app name
 const MODAL_APP_NAME = "open-inspect";
@@ -137,7 +140,11 @@ export class ModalClient {
    * Create a new sandbox for a session.
    */
   async createSandbox(request: CreateSandboxRequest): Promise<CreateSandboxResponse> {
-    console.log("Creating sandbox via Modal API:", request.sessionId);
+    const startTime = Date.now();
+    log.info("Modal API: create sandbox", {
+      sessionId: request.sessionId,
+      sandboxId: request.sandboxId,
+    });
 
     const headers = await this.getPostHeaders();
     const response = await fetch(this.createSandboxUrl, {
@@ -161,6 +168,12 @@ export class ModalClient {
 
     if (!response.ok) {
       const text = await response.text();
+      log.error("Modal API error", {
+        endpoint: "createSandbox",
+        status: response.status,
+        error: text,
+        durationMs: Date.now() - startTime,
+      });
       throw new Error(`Modal API error: ${response.status} ${text}`);
     }
 
@@ -175,6 +188,12 @@ export class ModalClient {
       throw new Error(`Modal API error: ${result.error || "Unknown error"}`);
     }
 
+    log.info("Modal API: create sandbox complete", {
+      sandboxId: result.data.sandbox_id,
+      durationMs: Date.now() - startTime,
+      status: response.status,
+    });
+
     return {
       sandboxId: result.data.sandbox_id,
       modalObjectId: result.data.modal_object_id,
@@ -187,7 +206,11 @@ export class ModalClient {
    * Pre-warm a sandbox for faster startup.
    */
   async warmSandbox(request: WarmSandboxRequest): Promise<WarmSandboxResponse> {
-    console.log("Warming sandbox via Modal API:", request.repoOwner, request.repoName);
+    const startTime = Date.now();
+    log.info("Modal API: warm sandbox", {
+      repoOwner: request.repoOwner,
+      repoName: request.repoName,
+    });
 
     const headers = await this.getPostHeaders();
     const response = await fetch(this.warmSandboxUrl, {
@@ -202,6 +225,12 @@ export class ModalClient {
 
     if (!response.ok) {
       const text = await response.text();
+      log.error("Modal API error", {
+        endpoint: "warmSandbox",
+        status: response.status,
+        error: text,
+        durationMs: Date.now() - startTime,
+      });
       throw new Error(`Modal API error: ${response.status} ${text}`);
     }
 
@@ -213,6 +242,12 @@ export class ModalClient {
     if (!result.success || !result.data) {
       throw new Error(`Modal API error: ${result.error || "Unknown error"}`);
     }
+
+    log.info("Modal API: warm sandbox complete", {
+      sandboxId: result.data.sandbox_id,
+      durationMs: Date.now() - startTime,
+      status: response.status,
+    });
 
     return {
       sandboxId: result.data.sandbox_id,
