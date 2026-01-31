@@ -322,6 +322,7 @@ describe("SessionRepository", () => {
         "Test User",
         "test@example.com",
         "encrypted-token",
+        null,
         9000,
         "owner",
         1000,
@@ -345,6 +346,7 @@ describe("SessionRepository", () => {
         null,
         null,
         null,
+        null,
         "member",
         1000,
       ]);
@@ -362,7 +364,7 @@ describe("SessionRepository", () => {
       expect(mock.calls[0].query).toContain("COALESCE");
       expect(mock.calls[0].params[0]).toBe(null); // githubUserId
       expect(mock.calls[0].params[1]).toBe("newlogin");
-      expect(mock.calls[0].params[6]).toBe("p-1"); // participantId
+      expect(mock.calls[0].params[7]).toBe("p-1"); // participantId
     });
   });
 
