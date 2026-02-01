@@ -3,8 +3,8 @@
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import { SidebarLayout, useSidebarContext } from "@/components/sidebar-layout";
-import { SecretsEditor } from "@/components/secrets-editor";
 import { formatModelNameLower } from "@/lib/format";
 
 interface Repo {
@@ -475,11 +475,16 @@ function HomeContent({
                 </div>
               </div>
 
-              <SecretsEditor
-                owner={selectedRepoObj?.owner}
-                name={selectedRepoObj?.name}
-                disabled={creating || loadingRepos}
-              />
+              {selectedRepoObj && (
+                <div className="mt-3 text-center">
+                  <Link
+                    href="/settings"
+                    className="text-xs text-muted-foreground hover:text-foreground transition"
+                  >
+                    Manage secrets and settings
+                  </Link>
+                </div>
+              )}
 
               {repos.length === 0 && !loadingRepos && (
                 <p className="mt-3 text-sm text-muted-foreground text-center">
