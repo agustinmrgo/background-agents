@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATABASE_ID="${1:?Usage: d1-migrate.sh <database-id> [migrations-dir]}"
+DATABASE_NAME="${1:?Usage: d1-migrate.sh <database-name> [migrations-dir]}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MIGRATIONS_DIR="${2:-$SCRIPT_DIR/../terraform/d1/migrations}"
 
 WRANGLER="npx wrangler"
 
 # 1. Ensure tracking table exists
-$WRANGLER d1 execute --remote --database-id "$DATABASE_ID" \
+$WRANGLER d1 execute "$DATABASE_NAME" --remote \
   --command "CREATE TABLE IF NOT EXISTS _schema_migrations (
     version TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -16,7 +16,7 @@ $WRANGLER d1 execute --remote --database-id "$DATABASE_ID" \
   )"
 
 # 2. Get applied versions (parse JSON output)
-APPLIED=$($WRANGLER d1 execute --remote --database-id "$DATABASE_ID" \
+APPLIED=$($WRANGLER d1 execute "$DATABASE_NAME" --remote \
   --command "SELECT version FROM _schema_migrations ORDER BY version" \
   --json | jq -r '.[0].results[].version // empty' 2>/dev/null || echo "")
 
@@ -33,9 +33,9 @@ for file in "$MIGRATIONS_DIR"/*.sql; do
   fi
 
   echo "Applying: $FILENAME"
-  $WRANGLER d1 execute --remote --database-id "$DATABASE_ID" --file "$file"
+  $WRANGLER d1 execute "$DATABASE_NAME" --remote --file "$file"
 
-  $WRANGLER d1 execute --remote --database-id "$DATABASE_ID" \
+  $WRANGLER d1 execute "$DATABASE_NAME" --remote \
     --command "INSERT INTO _schema_migrations (version, name) VALUES ('$VERSION', '$FILENAME')"
 
   COUNT=$((COUNT + 1))
