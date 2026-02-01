@@ -3,7 +3,7 @@
 # =============================================================================
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token with Workers and KV permissions"
+  description = "Cloudflare API token with Workers, KV, R2, and D1 permissions"
   type        = string
   sensitive   = true
 }
