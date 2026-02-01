@@ -1489,31 +1489,41 @@ export class SessionDO extends DurableObject<Env> {
   private async getUserEnvVars(): Promise<Record<string, string> | undefined> {
     const session = this.getSession();
     if (!session) {
-      throw new Error("Session not found");
+      this.log.warn("Cannot load secrets: no session");
+      return undefined;
     }
 
-    const repoId = await this.ensureRepoId(session);
-    if (!this.env.DB) {
-      throw new Error("Secrets storage is not configured");
+    if (!this.env.DB || !this.env.TOKEN_ENCRYPTION_KEY) {
+      this.log.debug("Secrets not configured, skipping", {
+        has_db: !!this.env.DB,
+        has_encryption_key: !!this.env.TOKEN_ENCRYPTION_KEY,
+      });
+      return undefined;
     }
-    if (!this.env.TOKEN_ENCRYPTION_KEY) {
-      throw new Error("TOKEN_ENCRYPTION_KEY not configured");
+
+    let repoId: number;
+    try {
+      repoId = await this.ensureRepoId(session);
+    } catch (e) {
+      this.log.warn("Cannot resolve repo ID for secrets, proceeding without", {
+        repo_owner: session.repo_owner,
+        repo_name: session.repo_name,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return undefined;
     }
+
     const store = new RepoSecretsStore(this.env.DB, this.env.TOKEN_ENCRYPTION_KEY);
 
     try {
       const secrets = await store.getDecryptedSecrets(repoId);
       return Object.keys(secrets).length === 0 ? undefined : secrets;
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (message.startsWith("Failed to decrypt secret")) {
-        throw e;
-      }
-      this.log.error("Failed to load repo secrets", {
+      this.log.error("Failed to load repo secrets, proceeding without", {
         repo_id: repoId,
-        error: message,
+        error: e instanceof Error ? e.message : String(e),
       });
-      throw new Error("Secrets storage unavailable");
+      return undefined;
     }
   }
 
