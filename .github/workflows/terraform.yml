@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "terraform/**"
+      - "scripts/**"
       - "packages/control-plane/**"
       - "packages/slack-bot/**"
       - "packages/modal-infra/**"
@@ -14,6 +15,7 @@ on:
     branches: [main]
     paths:
       - "terraform/**"
+      - "scripts/**"
       - "packages/control-plane/**"
       - "packages/slack-bot/**"
       - "packages/modal-infra/**"

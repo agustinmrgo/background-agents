@@ -49,16 +49,19 @@ resource "cloudflare_d1_database" "main" {
   name       = "open-inspect-${local.name_suffix}"
 }
 
-resource "null_resource" "d1_schema" {
+resource "null_resource" "d1_migrations" {
   depends_on = [cloudflare_d1_database.main]
 
   triggers = {
     database_id = cloudflare_d1_database.main.id
-    schema_sha  = filesha256("${var.project_root}/terraform/d1/schema.sql")
+    migrations_sha = sha256(join(",", [
+      for f in sort(fileset("${var.project_root}/terraform/d1/migrations", "*.sql")) :
+      filesha256("${var.project_root}/terraform/d1/migrations/${f}")
+    ]))
   }
 
   provisioner "local-exec" {
-    command = "wrangler d1 execute --remote --database-id ${self.triggers.database_id} --file ${var.project_root}/terraform/d1/schema.sql"
+    command = "bash ${var.project_root}/scripts/d1-migrate.sh ${self.triggers.database_id} ${var.project_root}/terraform/d1/migrations"
   }
 }
 
@@ -141,7 +144,7 @@ module "control_plane_worker" {
   compatibility_flags = ["nodejs_compat"]
   migration_tag       = "v1"
 
-  depends_on = [null_resource.control_plane_build, module.session_index_kv, null_resource.d1_schema]
+  depends_on = [null_resource.control_plane_build, module.session_index_kv, null_resource.d1_migrations]
 }
 
 # Build slack-bot worker bundle (only runs during apply, not plan)
