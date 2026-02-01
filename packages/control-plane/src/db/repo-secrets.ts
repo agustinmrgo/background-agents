@@ -110,25 +110,31 @@ export class RepoSecretsStore {
     let created = 0;
     let updated = 0;
 
+    const statements: D1PreparedStatement[] = [];
     for (const [key, value] of Object.entries(normalized)) {
       const encrypted = await encryptToken(value, this.encryptionKey);
       const isNew = !existingKeySet.has(key);
       if (isNew) created++;
       else updated++;
 
-      await this.db
-        .prepare(
-          `INSERT INTO repo_secrets
-           (repo_id, repo_owner, repo_name, key, encrypted_value, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(repo_id, key) DO UPDATE SET
-             repo_owner = excluded.repo_owner,
-             repo_name = excluded.repo_name,
-             encrypted_value = excluded.encrypted_value,
-             updated_at = excluded.updated_at`
-        )
-        .bind(repoId, owner, name, key, encrypted, now, now)
-        .run();
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT INTO repo_secrets
+             (repo_id, repo_owner, repo_name, key, encrypted_value, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(repo_id, key) DO UPDATE SET
+               repo_owner = excluded.repo_owner,
+               repo_name = excluded.repo_name,
+               encrypted_value = excluded.encrypted_value,
+               updated_at = excluded.updated_at`
+          )
+          .bind(repoId, owner, name, key, encrypted, now, now)
+      );
+    }
+
+    if (statements.length > 0) {
+      await this.db.batch(statements);
     }
 
     return { created, updated, keys: incomingKeys };

@@ -16,9 +16,12 @@ export async function DELETE(
   const { owner, name, key } = await params;
 
   try {
-    const response = await controlPlaneFetch(`/repos/${owner}/${name}/secrets/${key}`, {
-      method: "DELETE",
-    });
+    const response = await controlPlaneFetch(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/secrets/${encodeURIComponent(key)}`,
+      {
+        method: "DELETE",
+      }
+    );
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });

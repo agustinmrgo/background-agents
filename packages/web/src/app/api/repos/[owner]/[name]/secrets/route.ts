@@ -16,7 +16,9 @@ export async function GET(
   const { owner, name } = await params;
 
   try {
-    const response = await controlPlaneFetch(`/repos/${owner}/${name}/secrets`);
+    const response = await controlPlaneFetch(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/secrets`
+    );
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
@@ -39,10 +41,13 @@ export async function PUT(
   try {
     const body = await request.json();
 
-    const response = await controlPlaneFetch(`/repos/${owner}/${name}/secrets`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
+    const response = await controlPlaneFetch(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/secrets`,
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }
+    );
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });

@@ -90,6 +90,10 @@ class FakeD1Database {
 
     throw new Error(`Unexpected query: ${query}`);
   }
+
+  async batch(statements: FakePreparedStatement[]) {
+    return statements.map((stmt) => stmt.runSync());
+  }
 }
 
 class FakePreparedStatement {
@@ -109,8 +113,12 @@ class FakePreparedStatement {
     return { results: this.db.all(this.query, this.bound) as T[] };
   }
 
-  async run() {
+  runSync() {
     return this.db.run(this.query, this.bound);
+  }
+
+  async run() {
+    return this.runSync();
   }
 }
 
