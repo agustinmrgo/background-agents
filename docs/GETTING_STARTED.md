@@ -83,7 +83,7 @@ npm run build -w @open-inspect/shared
    of the panel for `*.YOUR-SUBDOMAIN.workers.dev`
 4. **Create API Token** at [API Tokens](https://dash.cloudflare.com/profile/api-tokens):
    - Use template: "Edit Cloudflare Workers"
-   - Add permissions: Workers KV Storage (Edit), Workers R2 Storage (Edit)
+   - Add permissions: Workers KV Storage (Edit), Workers R2 Storage (Edit), D1 (Edit)
 
 ### Cloudflare R2 (Terraform State Backend)
 

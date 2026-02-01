@@ -78,7 +78,8 @@ Tell the user:
 - **Workers Subdomain**: Workers & Pages → Overview, **bottom-right** panel shows
   `*.YOUR-SUBDOMAIN.workers.dev`
 - **API Token**: Create at https://dash.cloudflare.com/profile/api-tokens with template "Edit
-  Cloudflare Workers" + permissions for Workers KV Storage (Edit), Workers R2 Storage (Edit)
+  Cloudflare Workers" + permissions for Workers KV Storage (Edit), Workers R2 Storage (Edit), D1
+  (Edit)
 
 ### R2 Bucket
 
