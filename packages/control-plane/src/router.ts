@@ -14,6 +14,8 @@ import { RepoSecretsStore, RepoSecretsValidationError } from "./db/repo-secrets"
 import { SessionIndexStore } from "./db/session-index";
 
 import { RepoMetadataStore } from "./db/repo-metadata";
+import { createRequestMetrics, instrumentD1 } from "./db/instrumented-d1";
+import type { RequestMetrics } from "./db/instrumented-d1";
 import type {
   EnrichedRepository,
   InstallationRepository,
@@ -28,9 +30,11 @@ const REPOS_CACHE_KEY = "repos:list";
 const REPOS_CACHE_TTL_SECONDS = 300; // 5 minutes
 
 /**
- * Request context with correlation IDs propagated to downstream services.
+ * Request context with correlation IDs and per-request metrics.
  */
-export type RequestContext = CorrelationContext;
+export type RequestContext = CorrelationContext & {
+  metrics: RequestMetrics;
+};
 
 /**
  * Create a Request to a Durable Object stub with correlation headers.
@@ -352,11 +356,16 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const method = request.method;
   const startTime = Date.now();
 
-  // Build correlation context
+  // Build correlation context with per-request metrics
+  const metrics = createRequestMetrics();
   const ctx: RequestContext = {
     trace_id: request.headers.get("x-trace-id") || crypto.randomUUID(),
     request_id: crypto.randomUUID().slice(0, 8),
+    metrics,
   };
+
+  // Instrument D1 so all queries are automatically timed
+  const instrumentedEnv: Env = { ...env, DB: instrumentD1(env.DB, metrics) };
 
   // CORS preflight
   if (method === "OPTIONS") {
@@ -424,7 +433,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       let response: Response;
       let outcome: "success" | "error";
       try {
-        response = await route.handler(request, env, match, ctx);
+        response = await route.handler(request, instrumentedEnv, match, ctx);
         outcome = response.status >= 500 ? "error" : "success";
       } catch (e) {
         const durationMs = Date.now() - startTime;
@@ -438,6 +447,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           duration_ms: durationMs,
           outcome: "error",
           error: e instanceof Error ? e : String(e),
+          ...ctx.metrics.summarize(),
         });
         return error("Internal server error", 500);
       }
@@ -458,6 +468,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         http_status: response.status,
         duration_ms: durationMs,
         outcome,
+        ...ctx.metrics.summarize(),
       });
 
       return new Response(response.body, {
@@ -1054,11 +1065,13 @@ async function handleListRepos(
   request: Request,
   env: Env,
   _match: RegExpMatchArray,
-  _ctx: RequestContext
+  ctx: RequestContext
 ): Promise<Response> {
   // Check KV cache first
   try {
-    const cached = await env.REPOS_CACHE.get<CachedReposList>(REPOS_CACHE_KEY, "json");
+    const cached = await ctx.metrics.time("kv_read", () =>
+      env.REPOS_CACHE.get<CachedReposList>(REPOS_CACHE_KEY, "json")
+    );
     if (cached) {
       return json({
         repos: cached.repos,
@@ -1079,7 +1092,7 @@ async function handleListRepos(
   // Fetch repositories from GitHub App installation
   let repos: InstallationRepository[];
   try {
-    repos = await listInstallationRepositories(appConfig);
+    repos = await ctx.metrics.time("github_api", () => listInstallationRepositories(appConfig));
   } catch (e) {
     logger.error("Failed to list installation repositories", {
       error: e instanceof Error ? e : String(e),
@@ -1087,7 +1100,7 @@ async function handleListRepos(
     return error("Failed to fetch repositories from GitHub", 500);
   }
 
-  // Batch-fetch metadata from D1
+  // Batch-fetch metadata from D1 (queries timed automatically via instrumented env.DB)
   const metadataStore = new RepoMetadataStore(env.DB);
   let metadataMap: Map<string, RepoMetadata>;
   try {
@@ -1111,9 +1124,11 @@ async function handleListRepos(
   // Cache the results in KV with TTL
   const cachedAt = new Date().toISOString();
   try {
-    await env.REPOS_CACHE.put(REPOS_CACHE_KEY, JSON.stringify({ repos: enrichedRepos, cachedAt }), {
-      expirationTtl: REPOS_CACHE_TTL_SECONDS,
-    });
+    await ctx.metrics.time("kv_write", () =>
+      env.REPOS_CACHE.put(REPOS_CACHE_KEY, JSON.stringify({ repos: enrichedRepos, cachedAt }), {
+        expirationTtl: REPOS_CACHE_TTL_SECONDS,
+      })
+    );
   } catch (e) {
     logger.warn("Failed to cache repos list", { error: e instanceof Error ? e : String(e) });
   }
