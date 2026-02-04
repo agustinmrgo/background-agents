@@ -1111,6 +1111,15 @@ export class SessionDO extends DurableObject<Env> {
       this.log.info("Sandbox event", { event_type: event.type });
     }
     const now = Date.now();
+
+    // Heartbeats update the sandbox table (for health monitoring) but are not
+    // stored as events — they are high-frequency noise that drowns out real
+    // content in replay and pagination queries.
+    if (event.type === "heartbeat") {
+      this.repository.updateSandboxHeartbeat(now);
+      return;
+    }
+
     const eventId = generateId();
 
     // Get messageId from the event first (sandbox sends correct messageId with every event)
@@ -1190,12 +1199,6 @@ export class SessionDO extends DurableObject<Env> {
       if (event.sha) {
         this.repository.updateSessionCurrentSha(event.sha);
       }
-    }
-
-    if (event.type === "heartbeat") {
-      this.repository.updateSandboxHeartbeat(now);
-      // Note: Don't schedule separate heartbeat alarm - it's handled in the main alarm()
-      // which checks both inactivity and heartbeat health
     }
 
     // Handle push completion events
