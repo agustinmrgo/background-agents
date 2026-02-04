@@ -91,7 +91,8 @@ export type ClientMessage =
       type: "presence";
       status: "active" | "idle";
       cursor?: { line: number; file: string };
-    };
+    }
+  | { type: "fetch_history"; cursor: { timestamp: number; id: string }; limit?: number };
 
 // Server → Client messages
 export type ServerMessage =
@@ -122,7 +123,18 @@ export type ServerMessage =
   | { type: "sandbox_restored"; message: string }
   | { type: "sandbox_warning"; message: string }
   | { type: "session_status"; status: SessionStatus }
-  | { type: "processing_status"; isProcessing: boolean };
+  | { type: "processing_status"; isProcessing: boolean }
+  | {
+      type: "replay_complete";
+      hasMore: boolean;
+      cursor: { timestamp: number; id: string } | null;
+    }
+  | {
+      type: "history_page";
+      items: SandboxEvent[];
+      hasMore: boolean;
+      cursor: { timestamp: number; id: string } | null;
+    };
 
 // Sandbox events (from Modal)
 export type SandboxEvent =
@@ -233,6 +245,7 @@ export interface ClientInfo {
   lastSeen: number;
   clientId: string;
   ws: WebSocket;
+  lastFetchHistoryAt?: number;
 }
 
 // API response types
