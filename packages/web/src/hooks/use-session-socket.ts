@@ -532,18 +532,13 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
 
     console.log("Sending prompt:", content, "with model:", model);
 
-    // Add user message to events for display with author info
-    const userMessageEvent: SandboxEvent = {
-      type: "user_message",
-      content,
-      timestamp: Date.now() / 1000, // Convert to seconds to match server timestamps
-      author: currentParticipantRef.current || undefined,
-    };
-    setEvents((prev) => [...prev, userMessageEvent]);
-
     // Optimistically set isProcessing for immediate feedback
     // Server will confirm with processing_status message
     setSessionState((prev) => (prev ? { ...prev, isProcessing: true } : null));
+
+    // Note: user_message event is NOT inserted optimistically here.
+    // The server writes a user_message event to the events table and broadcasts it
+    // to all clients (including the sender), which handles both display and multiplayer.
 
     wsRef.current.send(
       JSON.stringify({

@@ -44,8 +44,8 @@ import type {
   MessageSource,
   ParticipantRole,
 } from "../types";
-import type { SessionRow, ParticipantRow, EventRow, SandboxRow, SandboxCommand } from "./types";
-import { SessionRepository, type MessageWithParticipant } from "./repository";
+import type { SessionRow, ParticipantRow, SandboxRow, SandboxCommand } from "./types";
+import { SessionRepository } from "./repository";
 import { RepoSecretsStore } from "../db/repo-secrets";
 
 /**
@@ -69,6 +69,7 @@ const VALID_EVENT_TYPES = [
   "heartbeat",
   "push_complete",
   "push_error",
+  "user_message",
 ] as const;
 
 /**
@@ -829,6 +830,7 @@ export class SessionDO extends DurableObject<Env> {
 
   /**
    * Send historical events to a newly connected client.
+   * Queries only the events table — user_message events are written at prompt time.
    * Returns metadata about what was sent for the replay_complete message.
    */
   private sendHistoricalEvents(ws: WebSocket): {
@@ -836,82 +838,23 @@ export class SessionDO extends DurableObject<Env> {
     oldestItem: { created_at: number; id: string } | null;
   } {
     const REPLAY_LIMIT = 500;
-
-    // Get events (tool calls, tokens, etc.) - newest N in chronological order
     const events = this.repository.getEventsForReplay(REPLAY_LIMIT);
+    const hasMore = events.length >= REPLAY_LIMIT;
 
-    // Get messages covering the same time window as fetched events
-    // If no events, get all messages
-    const oldestEventTimestamp = events.length > 0 ? events[0].created_at : null;
-    const messages =
-      oldestEventTimestamp !== null
-        ? this.repository.getMessagesWithParticipantsAfter(oldestEventTimestamp)
-        : this.repository.getMessagesWithParticipants(100);
-
-    // Combine and sort by timestamp, then id for stability
-    interface HistoryItem {
-      type: "message" | "event";
-      timestamp: number;
-      id: string;
-      data: MessageWithParticipant | EventRow;
-    }
-
-    const combined: HistoryItem[] = [
-      ...messages.map((m) => ({
-        type: "message" as const,
-        timestamp: m.created_at,
-        id: m.id,
-        data: m,
-      })),
-      ...events.map((e) => ({
-        type: "event" as const,
-        timestamp: e.created_at,
-        id: e.id,
-        data: e,
-      })),
-    ];
-
-    // Sort by timestamp ascending, then id for stability
-    combined.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
-
-    // Send in chronological order
-    for (const item of combined) {
-      if (item.type === "message") {
-        const msg = item.data as MessageWithParticipant;
+    for (const event of events) {
+      try {
+        const eventData = JSON.parse(event.data);
         this.safeSend(ws, {
           type: "sandbox_event",
-          event: {
-            type: "user_message",
-            content: msg.content,
-            messageId: msg.id,
-            timestamp: msg.created_at / 1000, // Convert to seconds
-            author: msg.participant_id
-              ? {
-                  participantId: msg.participant_id,
-                  name: msg.github_name || msg.github_login || "Unknown",
-                  avatar: getGitHubAvatarUrl(msg.github_login),
-                }
-              : undefined,
-          },
+          event: eventData,
         });
-      } else {
-        const event = item.data as EventRow;
-        try {
-          const eventData = JSON.parse(event.data);
-          this.safeSend(ws, {
-            type: "sandbox_event",
-            event: eventData,
-          });
-        } catch {
-          // Skip malformed events
-        }
+      } catch {
+        // Skip malformed events
       }
     }
 
-    // Determine if there's more history beyond what we sent
-    const hasMore = events.length >= REPLAY_LIMIT;
     const oldestItem =
-      combined.length > 0 ? { created_at: combined[0].timestamp, id: combined[0].id } : null;
+      events.length > 0 ? { created_at: events[0].created_at, id: events[0].id } : null;
 
     return { hasMore, oldestItem };
   }
@@ -1013,6 +956,27 @@ export class SessionDO extends DurableObject<Env> {
       createdAt: now,
     });
 
+    // Write user_message event to the events table for unified timeline replay
+    const userMessageEvent: SandboxEvent = {
+      type: "user_message",
+      content: data.content,
+      messageId,
+      timestamp: now / 1000, // Convert to seconds to match other events
+      author: {
+        participantId: participant.id,
+        name: participant.github_name || participant.github_login || participant.user_id,
+        avatar: getGitHubAvatarUrl(participant.github_login),
+      },
+    };
+    this.repository.createEvent({
+      id: generateId(),
+      type: "user_message",
+      data: JSON.stringify(userMessageEvent),
+      messageId,
+      createdAt: now,
+    });
+    this.broadcast({ type: "sandbox_event", event: userMessageEvent });
+
     // Get queue position
     const position = this.repository.getPendingOrProcessingCount();
 
@@ -1113,53 +1077,25 @@ export class SessionDO extends DurableObject<Env> {
     client.lastFetchHistoryAt = now;
 
     const limit = Math.max(1, Math.min(data.limit ?? 200, 500));
-    const page = this.repository.getHistoryPage(data.cursor.timestamp, data.cursor.id, limit);
+    const page = this.repository.getEventsHistoryPage(data.cursor.timestamp, data.cursor.id, limit);
 
-    // Build sortable items alongside conversion to avoid index misalignment
-    // when malformed events are skipped during JSON.parse
-    const allDbItems: { ts: number; id: string; item: SandboxEvent }[] = [];
-
+    const items: SandboxEvent[] = [];
     for (const event of page.events) {
       try {
-        const eventData = JSON.parse(event.data);
-        allDbItems.push({ ts: event.created_at, id: event.id, item: eventData });
+        items.push(JSON.parse(event.data));
       } catch {
         // Skip malformed events
       }
     }
 
-    for (const msg of page.messages) {
-      allDbItems.push({
-        ts: msg.created_at,
-        id: msg.id,
-        item: {
-          type: "user_message",
-          content: msg.content,
-          messageId: msg.id,
-          timestamp: msg.created_at / 1000, // Convert to seconds
-          author: msg.participant_id
-            ? {
-                participantId: msg.participant_id,
-                name: msg.github_name || msg.github_login || "Unknown",
-                avatar: getGitHubAvatarUrl(msg.github_login),
-              }
-            : undefined,
-        } as SandboxEvent,
-      });
-    }
-
-    // Sort chronologically for consistent display order
-    allDbItems.sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
-    const sortedItems = allDbItems.map((d) => d.item);
-
     // Compute new cursor from oldest item in the page
-    const oldestDbItem = allDbItems.length > 0 ? allDbItems[0] : null;
+    const oldestEvent = page.events.length > 0 ? page.events[0] : null;
 
     this.safeSend(ws, {
       type: "history_page",
-      items: sortedItems,
+      items,
       hasMore: page.hasMore,
-      cursor: oldestDbItem ? { timestamp: oldestDbItem.ts, id: oldestDbItem.id } : null,
+      cursor: oldestEvent ? { timestamp: oldestEvent.created_at, id: oldestEvent.id } : null,
     } as ServerMessage);
   }
 
@@ -2137,6 +2073,27 @@ export class SessionDO extends DurableObject<Env> {
         status: "pending",
         createdAt: now,
       });
+
+      // Write user_message event to the events table for unified timeline replay
+      const userMessageEvent: SandboxEvent = {
+        type: "user_message",
+        content: body.content,
+        messageId,
+        timestamp: now / 1000, // Convert to seconds to match other events
+        author: {
+          participantId: participant.id,
+          name: participant.github_name || participant.github_login || participant.user_id,
+          avatar: getGitHubAvatarUrl(participant.github_login),
+        },
+      };
+      this.repository.createEvent({
+        id: generateId(),
+        type: "user_message",
+        data: JSON.stringify(userMessageEvent),
+        messageId,
+        createdAt: now,
+      });
+      this.broadcast({ type: "sandbox_event", event: userMessageEvent });
 
       const queuePosition = this.repository.getPendingOrProcessingCount();
 
