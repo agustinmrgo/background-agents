@@ -1112,52 +1112,43 @@ export class SessionDO extends DurableObject<Env> {
     }
     client.lastFetchHistoryAt = now;
 
-    const limit = Math.min(data.limit ?? 200, 500);
+    const limit = Math.max(1, Math.min(data.limit ?? 200, 500));
     const page = this.repository.getHistoryPage(data.cursor.timestamp, data.cursor.id, limit);
 
-    // Convert events and messages to SandboxEvent[] items
-    const items: SandboxEvent[] = [];
+    // Build sortable items alongside conversion to avoid index misalignment
+    // when malformed events are skipped during JSON.parse
+    const allDbItems: { ts: number; id: string; item: SandboxEvent }[] = [];
 
     for (const event of page.events) {
       try {
         const eventData = JSON.parse(event.data);
-        items.push(eventData);
+        allDbItems.push({ ts: event.created_at, id: event.id, item: eventData });
       } catch {
         // Skip malformed events
       }
     }
 
     for (const msg of page.messages) {
-      items.push({
-        type: "user_message" as unknown as SandboxEvent["type"],
-        content: msg.content,
-        messageId: msg.id,
-        timestamp: msg.created_at / 1000, // Convert to seconds
-        author: msg.participant_id
-          ? {
-              participantId: msg.participant_id,
-              name: msg.github_name || msg.github_login || "Unknown",
-              avatar: getGitHubAvatarUrl(msg.github_login),
-            }
-          : undefined,
-      } as unknown as SandboxEvent);
+      allDbItems.push({
+        ts: msg.created_at,
+        id: msg.id,
+        item: {
+          type: "user_message",
+          content: msg.content,
+          messageId: msg.id,
+          timestamp: msg.created_at / 1000, // Convert to seconds
+          author: msg.participant_id
+            ? {
+                participantId: msg.participant_id,
+                name: msg.github_name || msg.github_login || "Unknown",
+                avatar: getGitHubAvatarUrl(msg.github_login),
+              }
+            : undefined,
+        } as SandboxEvent,
+      });
     }
 
-    // Sort chronologically by created_at for consistent display order
-    // Events have timestamp in seconds, messages were converted to seconds above
-    // Use the raw DB timestamps for sorting, then the items are already in the right format
-    const allDbItems = [
-      ...page.events.map((e, i) => ({
-        ts: e.created_at,
-        id: e.id,
-        item: items[i],
-      })),
-      ...page.messages.map((m, i) => ({
-        ts: m.created_at,
-        id: m.id,
-        item: items[page.events.length + i],
-      })),
-    ];
+    // Sort chronologically for consistent display order
     allDbItems.sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
     const sortedItems = allDbItems.map((d) => d.item);
 

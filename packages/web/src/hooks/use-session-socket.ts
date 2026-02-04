@@ -223,11 +223,37 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
           setHasMoreHistory(data.hasMore ?? false);
           cursorRef.current = data.cursor ?? null;
 
-          // Flush buffered live events
+          // Flush buffered live events in a single state update
           const buffered = liveEventBufferRef.current;
           liveEventBufferRef.current = [];
-          for (const evt of buffered) {
-            processSandboxEvent(evt);
+          if (buffered.length > 0) {
+            const toAdd: SandboxEvent[] = [];
+            for (const evt of buffered) {
+              if (evt.type === "token" && evt.content && evt.messageId) {
+                pendingTextRef.current = {
+                  content: evt.content,
+                  messageId: evt.messageId,
+                  timestamp: evt.timestamp,
+                };
+              } else if (evt.type === "execution_complete") {
+                if (pendingTextRef.current) {
+                  const pending = pendingTextRef.current;
+                  pendingTextRef.current = null;
+                  toAdd.push({
+                    type: "token",
+                    content: pending.content,
+                    messageId: pending.messageId,
+                    timestamp: pending.timestamp,
+                  });
+                }
+                toAdd.push(evt);
+              } else {
+                toAdd.push(evt);
+              }
+            }
+            if (toAdd.length > 0) {
+              setEvents((prev) => [...prev, ...toAdd]);
+            }
           }
           break;
         }

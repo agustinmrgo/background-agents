@@ -199,6 +199,13 @@ export type SandboxEvent =
       error: string;
       sandboxId?: string;
       timestamp?: number;
+    }
+  | {
+      type: "user_message";
+      content: string;
+      messageId: string;
+      timestamp: number;
+      author?: { participantId: string; name: string; avatar?: string };
     };
 
 // Attachment
