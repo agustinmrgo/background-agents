@@ -574,6 +574,18 @@ export class SessionRepository {
     return result.toArray() as unknown as MessageWithParticipant[];
   }
 
+  getMessagesWithParticipantsAfter(sinceTimestamp: number): MessageWithParticipant[] {
+    const result = this.sql.exec(
+      `SELECT m.*, p.id as participant_id, p.github_name, p.github_login
+       FROM messages m
+       LEFT JOIN participants p ON m.author_id = p.id
+       WHERE m.created_at >= ?
+       ORDER BY m.created_at ASC`,
+      sinceTimestamp
+    );
+    return result.toArray() as unknown as MessageWithParticipant[];
+  }
+
   // === EVENTS ===
 
   createEvent(data: CreateEventData): void {
@@ -615,8 +627,71 @@ export class SessionRepository {
   }
 
   getEventsForReplay(limit: number): EventRow[] {
-    const result = this.sql.exec(`SELECT * FROM events ORDER BY created_at ASC LIMIT ?`, limit);
+    const result = this.sql.exec(
+      `SELECT * FROM (
+         SELECT * FROM events ORDER BY created_at DESC, id DESC LIMIT ?
+       ) sub ORDER BY created_at ASC, id ASC`,
+      limit
+    );
     return result.toArray() as unknown as EventRow[];
+  }
+
+  /**
+   * Paginate the merged events+messages timeline using a composite cursor.
+   * Returns events and messages older than the cursor, plus a hasMore flag.
+   */
+  getHistoryPage(
+    cursorTimestamp: number,
+    cursorId: string,
+    limit: number
+  ): {
+    events: EventRow[];
+    messages: MessageWithParticipant[];
+    hasMore: boolean;
+  } {
+    // Query both tables with the SAME composite cursor
+    const events = this.sql
+      .exec(
+        `SELECT * FROM events
+         WHERE (created_at < ?1) OR (created_at = ?1 AND id < ?2)
+         ORDER BY created_at DESC, id DESC LIMIT ?3`,
+        cursorTimestamp,
+        cursorId,
+        limit + 1
+      )
+      .toArray() as unknown as EventRow[];
+
+    const messages = this.sql
+      .exec(
+        `SELECT m.*, p.id as participant_id, p.github_name, p.github_login
+         FROM messages m LEFT JOIN participants p ON m.author_id = p.id
+         WHERE (m.created_at < ?1) OR (m.created_at = ?1 AND m.id < ?2)
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?3`,
+        cursorTimestamp,
+        cursorId,
+        limit + 1
+      )
+      .toArray() as unknown as MessageWithParticipant[];
+
+    // Merge both, sort DESC by (created_at, id), take top limit
+    const merged = [
+      ...events.map((e) => ({ ts: e.created_at, id: e.id, source: "event" as const })),
+      ...messages.map((m) => ({ ts: m.created_at, id: m.id, source: "message" as const })),
+    ];
+    merged.sort((a, b) => b.ts - a.ts || b.id.localeCompare(a.id));
+
+    const hasMore = merged.length > limit;
+    const page = merged.slice(0, limit);
+
+    // Filter events/messages to only those in the page
+    const pageEventIds = new Set(page.filter((p) => p.source === "event").map((p) => p.id));
+    const pageMessageIds = new Set(page.filter((p) => p.source === "message").map((p) => p.id));
+
+    return {
+      events: events.filter((e) => pageEventIds.has(e.id)),
+      messages: messages.filter((m) => pageMessageIds.has(m.id)),
+      hasMore,
+    };
   }
 
   // === ARTIFACTS ===

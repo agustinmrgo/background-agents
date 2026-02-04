@@ -687,6 +687,10 @@ export class SessionDO extends DurableObject<Env> {
           await this.handleTyping();
           break;
 
+        case "fetch_history":
+          this.handleFetchHistory(ws, data);
+          break;
+
         case "presence":
           await this.updatePresence(ws, data);
           break;
@@ -805,7 +809,16 @@ export class SessionDO extends DurableObject<Env> {
     }
 
     // Send historical events (messages and sandbox events)
-    this.sendHistoricalEvents(ws);
+    const replay = this.sendHistoricalEvents(ws);
+
+    // Signal replay is complete with pagination cursor
+    this.safeSend(ws, {
+      type: "replay_complete",
+      hasMore: replay.hasMore,
+      cursor: replay.oldestItem
+        ? { timestamp: replay.oldestItem.created_at, id: replay.oldestItem.id }
+        : null,
+    } as ServerMessage);
 
     // Send current presence
     this.sendPresence(ws);
@@ -816,28 +829,50 @@ export class SessionDO extends DurableObject<Env> {
 
   /**
    * Send historical events to a newly connected client.
+   * Returns metadata about what was sent for the replay_complete message.
    */
-  private sendHistoricalEvents(ws: WebSocket): void {
-    // Get messages with participant info (user prompts)
-    const messages = this.repository.getMessagesWithParticipants(100);
+  private sendHistoricalEvents(ws: WebSocket): {
+    hasMore: boolean;
+    oldestItem: { created_at: number; id: string } | null;
+  } {
+    const REPLAY_LIMIT = 500;
 
-    // Get events (tool calls, tokens, etc.)
-    const events = this.repository.getEventsForReplay(500);
+    // Get events (tool calls, tokens, etc.) - newest N in chronological order
+    const events = this.repository.getEventsForReplay(REPLAY_LIMIT);
 
-    // Combine and sort by timestamp
+    // Get messages covering the same time window as fetched events
+    // If no events, get all messages
+    const oldestEventTimestamp = events.length > 0 ? events[0].created_at : null;
+    const messages =
+      oldestEventTimestamp !== null
+        ? this.repository.getMessagesWithParticipantsAfter(oldestEventTimestamp)
+        : this.repository.getMessagesWithParticipants(100);
+
+    // Combine and sort by timestamp, then id for stability
     interface HistoryItem {
       type: "message" | "event";
       timestamp: number;
+      id: string;
       data: MessageWithParticipant | EventRow;
     }
 
     const combined: HistoryItem[] = [
-      ...messages.map((m) => ({ type: "message" as const, timestamp: m.created_at, data: m })),
-      ...events.map((e) => ({ type: "event" as const, timestamp: e.created_at, data: e })),
+      ...messages.map((m) => ({
+        type: "message" as const,
+        timestamp: m.created_at,
+        id: m.id,
+        data: m,
+      })),
+      ...events.map((e) => ({
+        type: "event" as const,
+        timestamp: e.created_at,
+        id: e.id,
+        data: e,
+      })),
     ];
 
-    // Sort by timestamp ascending
-    combined.sort((a, b) => a.timestamp - b.timestamp);
+    // Sort by timestamp ascending, then id for stability
+    combined.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
 
     // Send in chronological order
     for (const item of combined) {
@@ -872,6 +907,13 @@ export class SessionDO extends DurableObject<Env> {
         }
       }
     }
+
+    // Determine if there's more history beyond what we sent
+    const hasMore = events.length >= REPLAY_LIMIT;
+    const oldestItem =
+      combined.length > 0 ? { created_at: combined[0].timestamp, id: combined[0].id } : null;
+
+    return { hasMore, oldestItem };
   }
 
   /**
@@ -1025,6 +1067,100 @@ export class SessionDO extends DurableObject<Env> {
       client.lastSeen = Date.now();
       this.broadcastPresence();
     }
+  }
+
+  /**
+   * Handle fetch_history request from client for paginated history loading.
+   */
+  private handleFetchHistory(
+    ws: WebSocket,
+    data: { cursor?: { timestamp: number; id: string }; limit?: number }
+  ): void {
+    const client = this.getClientInfo(ws);
+    if (!client) {
+      this.safeSend(ws, {
+        type: "error",
+        code: "NOT_SUBSCRIBED",
+        message: "Must subscribe first",
+      });
+      return;
+    }
+
+    // Validate cursor
+    if (
+      !data.cursor ||
+      typeof data.cursor.timestamp !== "number" ||
+      typeof data.cursor.id !== "string"
+    ) {
+      this.safeSend(ws, {
+        type: "error",
+        code: "INVALID_CURSOR",
+        message: "Invalid cursor",
+      });
+      return;
+    }
+
+    // Rate limit: reject if < 200ms since last fetch
+    const now = Date.now();
+    if (client.lastFetchHistoryAt && now - client.lastFetchHistoryAt < 200) {
+      this.safeSend(ws, {
+        type: "error",
+        code: "RATE_LIMITED",
+        message: "Too many requests",
+      });
+      return;
+    }
+    client.lastFetchHistoryAt = now;
+
+    const limit = Math.max(1, Math.min(data.limit ?? 200, 500));
+    const page = this.repository.getHistoryPage(data.cursor.timestamp, data.cursor.id, limit);
+
+    // Build sortable items alongside conversion to avoid index misalignment
+    // when malformed events are skipped during JSON.parse
+    const allDbItems: { ts: number; id: string; item: SandboxEvent }[] = [];
+
+    for (const event of page.events) {
+      try {
+        const eventData = JSON.parse(event.data);
+        allDbItems.push({ ts: event.created_at, id: event.id, item: eventData });
+      } catch {
+        // Skip malformed events
+      }
+    }
+
+    for (const msg of page.messages) {
+      allDbItems.push({
+        ts: msg.created_at,
+        id: msg.id,
+        item: {
+          type: "user_message",
+          content: msg.content,
+          messageId: msg.id,
+          timestamp: msg.created_at / 1000, // Convert to seconds
+          author: msg.participant_id
+            ? {
+                participantId: msg.participant_id,
+                name: msg.github_name || msg.github_login || "Unknown",
+                avatar: getGitHubAvatarUrl(msg.github_login),
+              }
+            : undefined,
+        } as SandboxEvent,
+      });
+    }
+
+    // Sort chronologically for consistent display order
+    allDbItems.sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
+    const sortedItems = allDbItems.map((d) => d.item);
+
+    // Compute new cursor from oldest item in the page
+    const oldestDbItem = allDbItems.length > 0 ? allDbItems[0] : null;
+
+    this.safeSend(ws, {
+      type: "history_page",
+      items: sortedItems,
+      hasMore: page.hasMore,
+      cursor: oldestDbItem ? { timestamp: oldestDbItem.ts, id: oldestDbItem.id } : null,
+    } as ServerMessage);
   }
 
   /**

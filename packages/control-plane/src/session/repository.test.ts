@@ -546,6 +546,18 @@ describe("SessionRepository", () => {
     });
   });
 
+  describe("getMessagesWithParticipantsAfter", () => {
+    it("filters messages by timestamp and joins participants", () => {
+      repo.getMessagesWithParticipantsAfter(5000);
+
+      expect(mock.calls.length).toBe(1);
+      expect(mock.calls[0].query).toContain("LEFT JOIN participants");
+      expect(mock.calls[0].query).toContain("m.created_at >= ?");
+      expect(mock.calls[0].query).toContain("ORDER BY m.created_at ASC");
+      expect(mock.calls[0].params).toEqual([5000]);
+    });
+  });
+
   // === EVENTS ===
 
   describe("createEvent", () => {
@@ -596,12 +608,87 @@ describe("SessionRepository", () => {
   });
 
   describe("getEventsForReplay", () => {
-    it("returns events in ascending order for replay", () => {
+    it("returns newest events in ascending order via DESC subquery", () => {
       repo.getEventsForReplay(500);
 
       expect(mock.calls.length).toBe(1);
-      expect(mock.calls[0].query).toContain("ORDER BY created_at ASC");
+      // Inner subquery selects newest events via DESC
+      expect(mock.calls[0].query).toContain("ORDER BY created_at DESC, id DESC LIMIT ?");
+      // Outer query re-sorts to chronological ASC for replay
+      expect(mock.calls[0].query).toContain("ORDER BY created_at ASC, id ASC");
       expect(mock.calls[0].params).toEqual([500]);
+    });
+  });
+
+  describe("getHistoryPage", () => {
+    it("queries both events and messages with composite cursor", () => {
+      repo.getHistoryPage(5000, "cursor-id", 50);
+
+      // Should make 2 SQL calls: events + messages
+      expect(mock.calls.length).toBe(2);
+
+      // Events query uses composite cursor
+      expect(mock.calls[0].query).toContain("FROM events");
+      expect(mock.calls[0].query).toContain("created_at < ?1");
+      expect(mock.calls[0].query).toContain("created_at = ?1 AND id < ?2");
+      expect(mock.calls[0].query).toContain("ORDER BY created_at DESC, id DESC");
+      expect(mock.calls[0].params).toEqual([5000, "cursor-id", 51]); // limit + 1
+
+      // Messages query uses same composite cursor
+      expect(mock.calls[1].query).toContain("FROM messages");
+      expect(mock.calls[1].query).toContain("LEFT JOIN participants");
+      expect(mock.calls[1].query).toContain("m.created_at < ?1");
+      expect(mock.calls[1].query).toContain("m.created_at = ?1 AND m.id < ?2");
+      expect(mock.calls[1].params).toEqual([5000, "cursor-id", 51]); // limit + 1
+    });
+
+    it("returns hasMore=false when merged results fit within limit", () => {
+      // Mock: 2 events, 1 message (total 3, limit 50)
+      const eventsQuery = `SELECT * FROM events
+         WHERE (created_at < ?1) OR (created_at = ?1 AND id < ?2)
+         ORDER BY created_at DESC, id DESC LIMIT ?3`;
+      const messagesQuery = `SELECT m.*, p.id as participant_id, p.github_name, p.github_login
+         FROM messages m LEFT JOIN participants p ON m.author_id = p.id
+         WHERE (m.created_at < ?1) OR (m.created_at = ?1 AND m.id < ?2)
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?3`;
+
+      mock.setData(eventsQuery, [
+        { id: "e1", created_at: 4000, type: "token", data: "{}" },
+        { id: "e2", created_at: 3000, type: "token", data: "{}" },
+      ]);
+      mock.setData(messagesQuery, [{ id: "m1", created_at: 3500, author_id: "p1" }]);
+
+      const result = repo.getHistoryPage(5000, "cursor-id", 50);
+      expect(result.hasMore).toBe(false);
+      expect(result.events.length).toBe(2);
+      expect(result.messages.length).toBe(1);
+    });
+
+    it("returns hasMore=true when merged results exceed limit", () => {
+      const eventsQuery = `SELECT * FROM events
+         WHERE (created_at < ?1) OR (created_at = ?1 AND id < ?2)
+         ORDER BY created_at DESC, id DESC LIMIT ?3`;
+      const messagesQuery = `SELECT m.*, p.id as participant_id, p.github_name, p.github_login
+         FROM messages m LEFT JOIN participants p ON m.author_id = p.id
+         WHERE (m.created_at < ?1) OR (m.created_at = ?1 AND m.id < ?2)
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?3`;
+
+      // 2 events + 1 message = 3 total, limit = 2 → hasMore = true
+      mock.setData(eventsQuery, [
+        { id: "e1", created_at: 4000, type: "token", data: "{}" },
+        { id: "e2", created_at: 3000, type: "token", data: "{}" },
+      ]);
+      mock.setData(messagesQuery, [{ id: "m1", created_at: 3500, author_id: "p1" }]);
+
+      const result = repo.getHistoryPage(5000, "cursor-id", 2);
+      expect(result.hasMore).toBe(true);
+    });
+
+    it("returns empty results with hasMore=false when no data matches cursor", () => {
+      const result = repo.getHistoryPage(5000, "cursor-id", 50);
+      expect(result.events).toEqual([]);
+      expect(result.messages).toEqual([]);
+      expect(result.hasMore).toBe(false);
     });
   });
 
