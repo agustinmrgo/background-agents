@@ -215,7 +215,7 @@ npm run lint -w @open-inspect/github-bot
 ```
 
 Tests run in Node.js via Vitest (no `@cloudflare/vitest-pool-workers` needed — the bot has no
-Durable Objects or D1).
+Durable Objects or D1). All tests are deterministic and run without network access.
 
 ## Package Structure
 
