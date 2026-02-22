@@ -10,7 +10,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { initSchema } from "./schema";
 import { generateId, hashToken } from "../auth/crypto";
-import { getGitHubAppConfig, getInstallationRepository } from "../auth/github-app";
+import { getGitHubAppConfig } from "../auth/github-app";
 import { createModalClient } from "../sandbox/client";
 import { createModalProvider } from "../sandbox/providers/modal-provider";
 import { createLogger, parseLogLevel } from "../logger";
@@ -59,6 +59,7 @@ import { GlobalSecretsStore } from "../db/global-secrets";
 import { mergeSecrets } from "../db/secrets-validation";
 import { OpenAITokenRefreshService } from "./openai-token-refresh-service";
 import { ParticipantService, getGitHubAvatarUrl } from "./participant-service";
+import { UserScmTokenStore } from "../db/user-scm-tokens";
 import { CallbackNotificationService } from "./callback-notification-service";
 import { PresenceService } from "./presence-service";
 import { SessionMessageQueue } from "./message-queue";
@@ -213,11 +214,16 @@ export class SessionDO extends DurableObject<Env> {
    */
   private get participantService(): ParticipantService {
     if (!this._participantService) {
+      const userScmTokenStore =
+        this.env.DB && this.env.TOKEN_ENCRYPTION_KEY
+          ? new UserScmTokenStore(this.env.DB, this.env.TOKEN_ENCRYPTION_KEY)
+          : null;
       this._participantService = new ParticipantService({
         repository: this.repository,
         env: this.env,
         log: this.log,
         generateId: () => generateId(),
+        userScmTokenStore,
       });
     }
     return this._participantService;
@@ -355,6 +361,7 @@ export class SessionDO extends DurableObject<Env> {
       provider,
       github: {
         appConfig: appConfig ?? undefined,
+        kvCache: this.env.REPOS_CACHE,
       },
     });
   }
@@ -1221,23 +1228,16 @@ export class SessionDO extends DurableObject<Env> {
       return session.repo_id;
     }
 
-    const appConfig = getGitHubAppConfig(this.env);
-    if (!appConfig) {
-      throw new Error("GitHub App not configured");
+    const result = await this.sourceControlProvider.checkRepositoryAccess({
+      owner: session.repo_owner,
+      name: session.repo_name,
+    });
+    if (!result) {
+      throw new Error("Repository is not accessible for the configured SCM provider");
     }
 
-    const repo = await getInstallationRepository(
-      appConfig,
-      session.repo_owner,
-      session.repo_name,
-      this.env
-    );
-    if (!repo) {
-      throw new Error("Repository is not installed for the GitHub App");
-    }
-
-    this.repository.updateSessionRepoId(repo.id);
-    return repo.id;
+    this.repository.updateSessionRepoId(result.repoId);
+    return result.repoId;
   }
 
   private async getUserEnvVars(): Promise<Record<string, string> | undefined> {
@@ -1830,7 +1830,7 @@ export class SessionDO extends DurableObject<Env> {
 
       const shouldUpdateTokens =
         clientSentAnyToken &&
-        (dbExpiresAt == null || (clientExpiresAt != null && clientExpiresAt >= dbExpiresAt));
+        (dbExpiresAt == null || (clientExpiresAt != null && clientExpiresAt > dbExpiresAt));
 
       // If we already have a refresh token (server-side refresh may rotate it),
       // only accept an incoming refresh token when we're also accepting the
