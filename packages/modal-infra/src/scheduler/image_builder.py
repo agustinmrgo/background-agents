@@ -139,7 +139,7 @@ def _generate_clone_token() -> str:
     return ""
 
 
-def _parse_head_sha_from_logs(sandbox) -> str:
+async def _parse_head_sha_from_logs(sandbox) -> str:
     """
     Parse the HEAD SHA from sandbox stdout after the sandbox has exited.
 
@@ -149,7 +149,7 @@ def _parse_head_sha_from_logs(sandbox) -> str:
     Returns the SHA string, or empty string if not found.
     """
     try:
-        for line in sandbox.stdout:
+        async for line in sandbox.stdout:
             if "git.sync_complete" not in line:
                 continue
             try:
@@ -223,12 +223,12 @@ async def build_repo_image(
         if exit_code != 0:
             raise BuildError(f"Build sandbox exited with code {exit_code}")
 
-        # 4. Parse base SHA from sandbox stdout (exact commit that was cloned)
-        base_sha = _parse_head_sha_from_logs(handle.modal_sandbox)
-
-        # 5. Snapshot filesystem
+        # 4. Snapshot filesystem (must happen before reading logs/stdout)
         image = await handle.modal_sandbox.snapshot_filesystem.aio()
         provider_image_id = image.object_id
+
+        # 5. Parse base SHA from sandbox stdout (exact commit that was cloned)
+        base_sha = await _parse_head_sha_from_logs(handle.modal_sandbox)
 
         build_duration = time.time() - start_time
 
