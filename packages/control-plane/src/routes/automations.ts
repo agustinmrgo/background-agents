@@ -11,10 +11,10 @@ import {
   getValidModelOrDefault,
   validateConditions,
   conditionRegistry,
+  TRIGGER_TYPE_TO_SOURCE,
   type CreateAutomationRequest,
   type UpdateAutomationRequest,
   type AutomationTriggerType,
-  type AutomationEventSource,
 } from "@open-inspect/shared";
 import { AutomationStore, toAutomation, toAutomationRun } from "../db/automation-store";
 import { generateId } from "../auth/crypto";
@@ -160,18 +160,15 @@ async function handleCreateAutomation(
   }
 
   // Validate conditions
-  if (body.triggerConfig?.conditions?.length) {
-    const sourceMap: Record<string, string> = {
-      github_event: "github",
-      linear_event: "linear",
-      sentry: "sentry",
-      webhook: "webhook",
-    };
-    const source = sourceMap[triggerType];
+  if (body.triggerConfig?.conditions) {
+    if (!Array.isArray(body.triggerConfig.conditions)) {
+      return error("triggerConfig.conditions must be an array", 400);
+    }
+    const source = TRIGGER_TYPE_TO_SOURCE[triggerType];
     if (source) {
       const conditionErrors = validateConditions(
         body.triggerConfig.conditions,
-        source as AutomationEventSource,
+        source,
         conditionRegistry
       );
       if (conditionErrors.length > 0) {
@@ -415,7 +412,27 @@ async function handleUpdateAutomation(
     if (existing.trigger_type === "schedule") {
       return error("Cannot set triggerConfig on schedule automations", 400);
     }
-    updateFields.trigger_config = JSON.stringify(body.triggerConfig);
+    if (body.triggerConfig === null) {
+      updateFields.trigger_config = null;
+    } else {
+      if (body.triggerConfig.conditions) {
+        if (!Array.isArray(body.triggerConfig.conditions)) {
+          return error("triggerConfig.conditions must be an array", 400);
+        }
+        const source = TRIGGER_TYPE_TO_SOURCE[existing.trigger_type as AutomationTriggerType];
+        if (source) {
+          const conditionErrors = validateConditions(
+            body.triggerConfig.conditions,
+            source,
+            conditionRegistry
+          );
+          if (conditionErrors.length > 0) {
+            return error(conditionErrors.join("; "), 400);
+          }
+        }
+      }
+      updateFields.trigger_config = JSON.stringify(body.triggerConfig);
+    }
   }
 
   // Recompute next_run_at if schedule changed (only for schedule types)

@@ -10,6 +10,9 @@ import type { Route, RequestContext } from "../routes/shared";
 import { parsePattern, json, error } from "../routes/shared";
 import type { Env } from "../types";
 
+/** Maximum Sentry webhook payload size (256KB — Sentry payloads with stack traces can be large). */
+const MAX_PAYLOAD_SIZE = 256 * 1024;
+
 async function handleSentryWebhook(
   request: Request,
   env: Env,
@@ -34,14 +37,28 @@ async function handleSentryWebhook(
     return error("Encryption key not configured", 503);
   }
 
-  // 2. Decrypt the stored secret and verify signature
+  // 2. Check signature header before doing any expensive work (decrypt, body read)
+  const signature = request.headers.get("sentry-hook-signature");
+  if (!signature) {
+    return error("Invalid signature", 401);
+  }
+
+  // Fast-path: reject if Content-Length header exceeds limit
+  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
+  if (contentLength > MAX_PAYLOAD_SIZE) {
+    return error("Payload too large", 413);
+  }
+
+  const body = await request.text();
+  if (body.length > MAX_PAYLOAD_SIZE) {
+    return error("Payload too large", 413);
+  }
+
+  // 3. Decrypt stored secret and verify signature
   const secret = await decryptSentrySecret(
     automation.trigger_auth_data,
     env.REPO_SECRETS_ENCRYPTION_KEY
   );
-
-  const signature = request.headers.get("sentry-hook-signature");
-  const body = await request.text();
 
   const valid = await verifySentrySignature(body, signature, secret);
   if (!valid) {
@@ -56,7 +73,7 @@ async function handleSentryWebhook(
     return error("Invalid JSON", 400);
   }
 
-  const event = normalizeSentryEvent(payload);
+  const event = normalizeSentryEvent(payload, automationId);
   if (!event) {
     return json({ ok: true, skipped: true });
   }
@@ -75,8 +92,8 @@ async function handleSentryWebhook(
     body: JSON.stringify(event),
   });
 
-  const result = await response.json();
-  return json({ ok: true, ...(result as Record<string, unknown>) });
+  const result = await response.json<{ triggered: number; skipped: number }>();
+  return json({ ok: true, ...result }, response.status === 200 ? 200 : response.status);
 }
 
 export const sentryWebhookRoute: Route = {
