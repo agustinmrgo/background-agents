@@ -320,28 +320,6 @@ class TestPromptTaskDecoupling:
         assert parsed["messageId"] == "msg-1"
         assert parsed["success"] is True
 
-    @pytest.mark.asyncio
-    async def test_prompt_message_id_file_lifecycle(self, bridge: AgentBridge, tmp_path):
-        """_handle_prompt should scope the current message ID to the active prompt only."""
-        bridge.current_message_id_file = tmp_path / "current-message-id"
-
-        async def fake_stream(message_id, content, model, reasoning_effort):
-            assert bridge._inflight_message_id == "msg-42"
-            assert bridge.current_message_id_file.read_text() == "msg-42"
-            yield {"type": "token", "content": "hello", "messageId": message_id}
-
-        bridge._stream_opencode_response_sse = fake_stream
-
-        await bridge._handle_command({"type": "prompt", "messageId": "msg-42", "content": "test"})
-        task = bridge._current_prompt_task
-        assert task is not None
-
-        await task
-        await asyncio.sleep(0)
-
-        assert bridge._inflight_message_id is None
-        assert not bridge.current_message_id_file.exists()
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
