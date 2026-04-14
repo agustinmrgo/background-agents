@@ -11,6 +11,7 @@ on:
       - "packages/github-bot/**"
       - "packages/linear-bot/**"
       - "packages/modal-infra/**"
+      - "packages/daytona-infra/**"
       - "packages/sandbox-runtime/**"
       - "packages/shared/**"
       - "packages/web/**" # Web app deployed via Terraform when web_platform = "cloudflare"
@@ -25,6 +26,7 @@ on:
       - "packages/github-bot/**"
       - "packages/linear-bot/**"
       - "packages/modal-infra/**"
+      - "packages/daytona-infra/**"
       - "packages/sandbox-runtime/**"
       - "packages/shared/**"
       - "packages/web/**"
@@ -286,10 +288,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Modal CLI and dependencies
+      - name: Install sandbox infrastructure dependencies
         run: |
           pip install -e packages/sandbox-runtime
-          pip install modal fastapi pydantic httpx PyJWT
+          pip install modal fastapi pydantic httpx PyJWT 'daytona==0.161.0'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
