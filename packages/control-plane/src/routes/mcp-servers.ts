@@ -71,6 +71,12 @@ async function handleCreateMcpServer(
   if (body.type !== "local" && body.type !== "remote") {
     return error("type must be 'local' or 'remote'", 400);
   }
+  if (
+    body.command !== undefined &&
+    (!Array.isArray(body.command) || !body.command.every((c: unknown) => typeof c === "string"))
+  ) {
+    return error("command must be an array of strings", 400);
+  }
 
   try {
     const store = new McpServerStore(env.DB, env.REPO_SECRETS_ENCRYPTION_KEY);
@@ -115,6 +121,13 @@ async function handleUpdateMcpServer(
     body = await request.json();
   } catch {
     return error("Invalid JSON body", 400);
+  }
+
+  if (
+    body.command !== undefined &&
+    (!Array.isArray(body.command) || !body.command.every((c: unknown) => typeof c === "string"))
+  ) {
+    return error("command must be an array of strings", 400);
   }
 
   try {

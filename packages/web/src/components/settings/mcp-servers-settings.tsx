@@ -348,6 +348,10 @@ export function McpServersSettings() {
       toast.error("Command is required for local servers");
       return;
     }
+    if (form.scopeMode === "selected" && form.repoScopes.length === 0) {
+      toast.error("Select at least one repository or switch to All repositories");
+      return;
+    }
 
     setSaving(true);
 

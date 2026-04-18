@@ -151,14 +151,6 @@ export class McpServerStore {
     return row ? rowToMetadata(row) : null;
   }
 
-  private async getDecrypted(id: string): Promise<McpServerConfig | null> {
-    const row = await this.db
-      .prepare("SELECT * FROM mcp_servers WHERE id = ?")
-      .bind(id)
-      .first<McpServerRow>();
-    return row ? this.decryptRow(row) : null;
-  }
-
   async create(config: Omit<McpServerConfig, "id">): Promise<McpServerMetadata> {
     const id = generateId();
     const now = Date.now();
@@ -218,30 +210,41 @@ export class McpServerStore {
       >
     >
   ): Promise<McpServerMetadata | null> {
-    const existing = await this.getDecrypted(id);
-    if (!existing) return null;
+    const row = await this.db
+      .prepare("SELECT * FROM mcp_servers WHERE id = ?")
+      .bind(id)
+      .first<McpServerRow>();
+    if (!row) return null;
 
-    const merged: Omit<McpServerConfig, "id"> = {
-      name: patch.name ?? existing.name,
-      type: patch.type ?? existing.type,
-      command: patch.command !== undefined ? patch.command : existing.command,
-      url: patch.url !== undefined ? patch.url : existing.url,
-      env: patch.env !== undefined ? patch.env : existing.env,
-      headers: patch.headers !== undefined ? patch.headers : existing.headers,
-      repoScopes: patch.repoScopes !== undefined ? patch.repoScopes : existing.repoScopes,
-      enabled: patch.enabled !== undefined ? patch.enabled : existing.enabled,
-    };
-    if (merged.type === "local" && (!merged.command || merged.command.length === 0)) {
+    const credentialsChanged =
+      patch.env !== undefined || patch.headers !== undefined || patch.type !== undefined;
+
+    let encryptedEnv: string;
+    if (credentialsChanged) {
+      const existing = await this.decryptRow(row);
+      const mergedType = patch.type ?? existing.type;
+      const mergedEnv = patch.env !== undefined ? patch.env : existing.env;
+      const mergedHeaders = patch.headers !== undefined ? patch.headers : existing.headers;
+      encryptedEnv = await this.encryptEnv(
+        mergedType === "remote" ? (mergedHeaders ?? {}) : (mergedEnv ?? {})
+      );
+    } else {
+      encryptedEnv = row.env;
+    }
+
+    const mergedType = patch.type ?? (row.type as "local" | "remote");
+    const mergedCommand =
+      patch.command !== undefined ? patch.command : safeJsonParseCommand(row.command);
+    const mergedUrl = patch.url !== undefined ? patch.url : (row.url ?? undefined);
+
+    if (mergedType === "local" && (!mergedCommand || mergedCommand.length === 0)) {
       throw new McpServerValidationError("Local MCP servers require a command");
     }
-    if (merged.type === "remote" && !merged.url) {
+    if (mergedType === "remote" && !mergedUrl) {
       throw new McpServerValidationError("remote MCP servers require a URL");
     }
 
     const now = Date.now();
-    const encryptedEnv = await this.encryptEnv(
-      merged.type === "remote" ? (merged.headers ?? {}) : (merged.env ?? {})
-    );
 
     try {
       await this.db
@@ -250,22 +253,26 @@ export class McpServerStore {
            WHERE id = ?`
         )
         .bind(
-          merged.name,
-          merged.type,
-          merged.command ? JSON.stringify(merged.command) : null,
-          merged.url ?? null,
+          patch.name ?? row.name,
+          mergedType,
+          mergedCommand ? JSON.stringify(mergedCommand) : null,
+          mergedUrl ?? null,
           encryptedEnv,
-          merged.repoScopes?.length
-            ? JSON.stringify(merged.repoScopes.map((r) => r.toLowerCase()))
-            : null,
-          merged.enabled ? 1 : 0,
+          patch.repoScopes !== undefined
+            ? patch.repoScopes?.length
+              ? JSON.stringify(patch.repoScopes.map((r) => r.toLowerCase()))
+              : null
+            : row.repo_scope,
+          patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : row.enabled,
           now,
           id
         )
         .run();
     } catch (err) {
       if (isUniqueConstraintError(err)) {
-        throw new McpServerValidationError(`An MCP server named '${merged.name}' already exists`);
+        throw new McpServerValidationError(
+          `An MCP server named '${patch.name ?? row.name}' already exists`
+        );
       }
       throw err;
     }
