@@ -268,6 +268,9 @@ class SandboxSupervisor:
                 return True
             if not await self._clone_repo():
                 return False
+            # git clone already checks out the requested branch, so an immediate
+            # fetch + checkout just adds another round trip on the cold path.
+            return True
 
         return await self._update_existing_repo()
 
@@ -1080,7 +1083,15 @@ class SandboxSupervisor:
                 await self.shutdown_event.wait()
                 return
 
-            # Phase 3.5: Start optional sidecars (best-effort, non-fatal)
+            # Phase 4: Start OpenCode server (in repo directory)
+            await self.start_opencode()
+            opencode_ready = True
+
+            # Phase 5: Start bridge (after OpenCode is ready)
+            await self.start_bridge()
+
+            # Phase 5.5: Start optional sidecars only after OpenCode is ready.
+            # These are useful, but they should never delay first-prompt readiness.
             for sidecar_name, starter in (
                 ("code_server", self.start_code_server),
                 ("ttyd", self.start_ttyd),
@@ -1099,13 +1110,6 @@ class SandboxSupervisor:
                         await self.start_ttyd_proxy()
                     except Exception as e:
                         self.log.warn("ttyd_proxy.start_failed", exc=e)
-
-            # Phase 4: Start OpenCode server (in repo directory)
-            await self.start_opencode()
-            opencode_ready = True
-
-            # Phase 5: Start bridge (after OpenCode is ready)
-            await self.start_bridge()
 
             # Emit sandbox.startup wide event
             duration_ms = int((time.time() - startup_start) * 1000)

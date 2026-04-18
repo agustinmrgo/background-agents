@@ -319,6 +319,52 @@ class TestNormalMode:
         clone_args = clone_calls[0]
         assert "100" in clone_args, f"Expected --depth 100 in clone args, got {clone_args}"
 
+    @pytest.mark.asyncio
+    async def test_fresh_clone_skips_redundant_fetch_and_checkout(self, base_env, tmp_path):
+        """Fresh clone should not immediately do an extra fetch + checkout."""
+        supervisor = _make_supervisor(base_env)
+        supervisor.repo_path = tmp_path / "nonexistent"
+
+        all_calls = []
+
+        async def fake_subprocess(*args, **kwargs):
+            all_calls.append(args)
+            mock_proc = MagicMock()
+            mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+            mock_proc.wait = AsyncMock(return_value=0)
+            mock_proc.returncode = 0
+            return mock_proc
+
+        supervisor.run_setup_script = AsyncMock(return_value=True)
+        supervisor.run_start_script = AsyncMock(return_value=True)
+        supervisor.start_opencode = AsyncMock()
+        supervisor.start_bridge = AsyncMock()
+        supervisor.monitor_processes = AsyncMock()
+        supervisor.shutdown = AsyncMock()
+
+        with (
+            patch.dict(os.environ, base_env, clear=False),
+            patch(
+                "sandbox_runtime.entrypoint.asyncio.create_subprocess_exec",
+                side_effect=fake_subprocess,
+            ),
+        ):
+            await supervisor.run()
+
+        git_calls = [args for args in all_calls if args and args[0] == "git"]
+        assert git_calls == [
+            (
+                "git",
+                "clone",
+                "--depth",
+                "100",
+                "--branch",
+                "main",
+                "https://github.com/acme/my-repo.git",
+                str(supervisor.repo_path),
+            )
+        ]
+
 
 class TestSnapshotRestoreMode:
     """RESTORED_FROM_SNAPSHOT=true: update repo (best-effort) + start hook, skip setup."""

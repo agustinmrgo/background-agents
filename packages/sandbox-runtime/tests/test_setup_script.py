@@ -303,6 +303,60 @@ class TestSetupInRun:
                 call_order.append(name)
         assert call_order == ["run_setup_script", "run_start_script", "start_opencode"]
 
+    async def test_run_starts_sidecars_after_bridge(self, tmp_path):
+        sup = _make_supervisor(tmp_path)
+
+        call_order = []
+
+        async def mark(name):
+            call_order.append(name)
+
+        async def mark_setup_script():
+            await mark("run_setup_script")
+            return True
+
+        async def mark_start_script():
+            await mark("run_start_script")
+            return True
+
+        async def mark_start_opencode():
+            await mark("start_opencode")
+
+        async def mark_start_bridge():
+            await mark("start_bridge")
+
+        async def mark_start_code_server():
+            await mark("start_code_server")
+
+        async def mark_start_ttyd():
+            await mark("start_ttyd")
+
+        sup.perform_git_sync = AsyncMock(return_value=True)
+        sup.run_setup_script = AsyncMock(side_effect=mark_setup_script)
+        sup.run_start_script = AsyncMock(side_effect=mark_start_script)
+        sup.start_opencode = AsyncMock(side_effect=mark_start_opencode)
+        sup.start_bridge = AsyncMock(side_effect=mark_start_bridge)
+        sup.start_code_server = AsyncMock(side_effect=mark_start_code_server)
+        sup.start_ttyd = AsyncMock(side_effect=mark_start_ttyd)
+        sup.monitor_processes = AsyncMock()
+        sup.ttyd_process = None
+
+        with (
+            patch.dict("os.environ", {"RESTORED_FROM_SNAPSHOT": "false"}, clear=False),
+            patch("asyncio.get_event_loop") as mock_loop,
+        ):
+            mock_loop.return_value.add_signal_handler = MagicMock()
+            await sup.run()
+
+        assert call_order == [
+            "run_setup_script",
+            "run_start_script",
+            "start_opencode",
+            "start_bridge",
+            "start_code_server",
+            "start_ttyd",
+        ]
+
     async def test_run_skips_setup_on_snapshot_restore(self, tmp_path):
         sup = _make_supervisor(tmp_path)
 
