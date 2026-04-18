@@ -9,11 +9,12 @@ This package contains the code that runs inside sandboxes regardless of provider
 - Tools: OpenCode custom tools (PR creation, task management)
 """
 
-from .types import GitSyncStatus, GitUser, SandboxEvent, SandboxStatus, SessionConfig
+from .types import GitSyncStatus, GitUser, McpServerConfig, SandboxEvent, SandboxStatus, SessionConfig
 
 __all__ = [
     "GitSyncStatus",
     "GitUser",
+    "McpServerConfig",
     "SandboxEvent",
     "SandboxStatus",
     "SessionConfig",
