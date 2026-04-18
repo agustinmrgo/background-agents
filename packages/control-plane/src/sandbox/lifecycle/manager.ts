@@ -36,7 +36,6 @@ import {
 import { extractProviderAndModel } from "../../utils/models";
 import { createLogger, type Logger } from "../../logger";
 import { hashToken } from "../../auth/crypto";
-// McpServerStore is used via the McpServerLookup interface — not imported directly
 import { mintJwt } from "../../auth/jwt";
 
 const log = createLogger("lifecycle-manager");

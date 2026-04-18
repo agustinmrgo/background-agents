@@ -107,20 +107,15 @@ class GitUser(BaseModel):
 
 
 class McpServerConfig(TypedDict, total=False):
-    """Shape of an MCP server config entry, mirroring the TypeScript McpServerConfig type.
-
-    Fields match packages/shared/src/types/integrations.ts > McpServerConfig.
-    - local servers: set command + env (process environment variables)
-    - remote servers: set url + headers (HTTP request headers, e.g. Authorization)
-    """
+    """MCP server config entry. Mirrors the TypeScript McpServerConfig type."""
 
     id: str
     name: str
     type: str  # "local" | "remote"
     command: list[str]
     url: str
-    env: dict[str, str]  # local only — process environment variables
-    headers: dict[str, str]  # remote only — HTTP request headers
+    env: dict[str, str]
+    headers: dict[str, str]
     repoScopes: list[str] | None
     enabled: bool
 

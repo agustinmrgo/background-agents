@@ -56,9 +56,6 @@ function safeJsonParseEnv(raw: string): Record<string, string> {
 }
 
 function rowToConfig(row: McpServerRow, payload: Record<string, string>): McpServerConfig {
-  // The DB `env` column stores different things depending on server type:
-  //   local  → process environment variables  → McpServerConfig.env
-  //   remote → HTTP request headers           → McpServerConfig.headers
   const envOrHeaders: Pick<McpServerConfig, "env" | "headers"> =
     row.type === "remote" ? { headers: payload } : { env: payload };
   return {
@@ -73,12 +70,7 @@ function rowToConfig(row: McpServerRow, payload: Record<string, string>): McpSer
   };
 }
 
-/**
- * Convert a DB row to metadata (no decrypted credentials).
- * The `env` column is checked for non-empty content to set the boolean indicators.
- */
 function rowToMetadata(row: McpServerRow): McpServerMetadata {
-  // Check if the env column has any meaningful content (not empty JSON or empty string)
   const hasCredentials = row.env !== "" && row.env !== "{}" && row.env !== "null";
   return {
     id: row.id,
@@ -93,14 +85,7 @@ function rowToMetadata(row: McpServerRow): McpServerMetadata {
   };
 }
 
-/**
- * Check if an error message indicates a D1 UNIQUE constraint violation.
- *
- * NOTE: D1 does not expose structured error codes, so we string-match against the
- * SQLite error message. If Cloudflare ever changes the wording this check silently
- * becomes a no-op (constraint errors fall through as 503 instead of 400). Keep an
- * eye on this if D1 error shapes change in future Worker runtime versions.
- */
+/** D1 doesn't expose structured error codes — string-match the SQLite message. */
 function isUniqueConstraintError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.toLowerCase().includes("unique constraint failed");
@@ -112,37 +97,20 @@ export class McpServerStore {
     private readonly encryptionKey?: string
   ) {}
 
-  /** Encrypt env dict to a stored string. Falls back to plaintext if no key.
-   *  Empty dicts are stored as plaintext "{}" (no encryption) so that
-   *  rowToMetadata() can detect "no credentials" without decrypting.
-   */
+  /** Empty dicts are stored as plaintext "{}" so rowToMetadata() can detect "no credentials". */
   private async encryptEnv(env: Record<string, string>): Promise<string> {
     const plain = JSON.stringify(env);
     if (!this.encryptionKey || Object.keys(env).length === 0) return plain;
     return encryptToken(plain, this.encryptionKey);
   }
 
-  /**
-   * Decrypt env string from storage.
-   *
-   * Three cases:
-   * 1. No encryption key → treat as plaintext JSON (dev / unconfigured)
-   * 2. Key present, decrypt succeeds → normal encrypted row
-   * 3. Key present, decrypt fails → pre-encryption plaintext row (migration period).
-   *    Falls back to JSON parse; logs a warning so ops can tell the difference from
-   *    a key rotation mistake.
-   *
-   * NOTE: env values are returned in plaintext to callers. This is intentional —
-   * they are required by the sandbox at runtime. Transport to Modal is over TLS.
-   * Do NOT log the returned env object.
-   */
   private async decryptEnv(raw: string): Promise<Record<string, string>> {
     if (!this.encryptionKey) return safeJsonParseEnv(raw);
     try {
       const plain = await decryptToken(raw, this.encryptionKey);
       return safeJsonParseEnv(plain);
     } catch {
-      // Decryption failed — check if it looks like a pre-encryption plaintext row
+      // Decryption failed — try plaintext fallback (pre-encryption row)
       const plaintext = safeJsonParseEnv(raw);
       if (Object.keys(plaintext).length > 0) {
         log.warn("MCP server env decryption failed — treating as pre-encryption plaintext row", {
@@ -150,7 +118,6 @@ export class McpServerStore {
         });
         return plaintext;
       }
-      // Empty JSON or ciphertext with wrong key — log a clear error, return empty
       log.error("MCP server env decryption failed and raw value is not plaintext JSON", {
         event: "mcp_server.env_decrypt_error",
       });
@@ -163,10 +130,6 @@ export class McpServerStore {
     return rowToConfig(row, env);
   }
 
-  /**
-   * List MCP server metadata (no decrypted credentials).
-   * Safe for API responses — never exposes env vars or headers.
-   */
   async list(repoScope?: string): Promise<McpServerMetadata[]> {
     const { results } = await this.db
       .prepare("SELECT * FROM mcp_servers ORDER BY name")
@@ -180,10 +143,6 @@ export class McpServerStore {
     });
   }
 
-  /**
-   * Get a single MCP server's metadata (no decrypted credentials).
-   * Safe for API responses.
-   */
   async get(id: string): Promise<McpServerMetadata | null> {
     const row = await this.db
       .prepare("SELECT * FROM mcp_servers WHERE id = ?")
@@ -192,10 +151,6 @@ export class McpServerStore {
     return row ? rowToMetadata(row) : null;
   }
 
-  /**
-   * Get a single MCP server with decrypted credentials.
-   * Internal only — used by update() to read-then-merge.
-   */
   private async getDecrypted(id: string): Promise<McpServerConfig | null> {
     const row = await this.db
       .prepare("SELECT * FROM mcp_servers WHERE id = ?")
@@ -215,8 +170,6 @@ export class McpServerStore {
       throw new McpServerValidationError("remote MCP servers require a URL");
     }
 
-    // For remote servers, the DB `env` column stores HTTP headers (McpServerConfig.headers).
-    // For local servers, it stores process environment variables (McpServerConfig.env).
     const encryptedEnv = await this.encryptEnv(
       config.type === "remote" ? (config.headers ?? {}) : (config.env ?? {})
     );
@@ -268,7 +221,6 @@ export class McpServerStore {
     const existing = await this.getDecrypted(id);
     if (!existing) return null;
 
-    // Explicit allowlist — id, created_at, updated_at cannot be overwritten
     const merged: Omit<McpServerConfig, "id"> = {
       name: patch.name ?? existing.name,
       type: patch.type ?? existing.type,
@@ -279,8 +231,6 @@ export class McpServerStore {
       repoScopes: patch.repoScopes !== undefined ? patch.repoScopes : existing.repoScopes,
       enabled: patch.enabled !== undefined ? patch.enabled : existing.enabled,
     };
-    // Validate the merged result — catches cases where type is changed without
-    // updating the corresponding command/url field (same rules as create()).
     if (merged.type === "local" && (!merged.command || merged.command.length === 0)) {
       throw new McpServerValidationError("Local MCP servers require a command");
     }
@@ -289,7 +239,6 @@ export class McpServerStore {
     }
 
     const now = Date.now();
-    // For remote servers, the DB `env` column stores HTTP headers; for local, process env.
     const encryptedEnv = await this.encryptEnv(
       merged.type === "remote" ? (merged.headers ?? {}) : (merged.env ?? {})
     );
@@ -321,7 +270,6 @@ export class McpServerStore {
       throw err;
     }
 
-    // Return metadata (no credentials) from the updated row
     const updated = await this.get(id);
     if (!updated) {
       throw new Error(`MCP server '${id}' not found after update — this should not happen`);
@@ -334,13 +282,6 @@ export class McpServerStore {
     return (result.meta?.changes ?? 0) > 0;
   }
 
-  /**
-   * Get all enabled MCP servers applicable to a session (global + repo-specific).
-   * Decrypts credentials — only called internally at sandbox spawn time.
-   *
-   * Returned env values are decrypted plaintext — required by the sandbox at runtime.
-   * Do NOT log the returned McpServerConfig objects.
-   */
   async getDecryptedForSession(repoOwner: string, repoName: string): Promise<McpServerConfig[]> {
     const repoFullName = `${repoOwner}/${repoName}`.toLowerCase();
     const { results } = await this.db

@@ -1,7 +1,3 @@
-/**
- * MCP server configuration routes.
- */
-
 import type { McpServerConfig } from "@open-inspect/shared";
 import { McpServerStore, McpServerValidationError } from "../db/mcp-servers";
 import type { Env } from "../types";

@@ -439,12 +439,7 @@ class SandboxSupervisor:
     _NPM_PKG_RE = re.compile(r"^(@[\w.-]+/)?[\w.-]+(@[\w.-]+)?$")
 
     def _install_mcp_packages(self, servers: list[dict]) -> None:
-        """Install npm packages required by STDIO MCP servers.
-
-        For each non-remote server whose command starts with 'npx', installs
-        the package globally so npx doesn't download it at runtime (which can
-        fail or be slow inside sandboxes).
-        """
+        """Pre-install npm packages for local MCP servers that use npx."""
         packages: list[str] = []
         for server in servers:
             if server.get("type") == "remote":
@@ -452,20 +447,10 @@ class SandboxSupervisor:
             cmd = server.get("command", [])
             if not cmd:
                 continue
-            # npx @scope/package  →  install @scope/package
-            # npx -y @scope/package  →  install @scope/package
             parts = [c for c in cmd if isinstance(c, str)]
             if not parts or parts[0] != "npx":
                 continue
-            # Resolve the package name to install.
-            #
-            # Two common npx patterns:
-            #   npx [-y] @scope/pkg          → pkg = @scope/pkg (first non-flag)
-            #   npx -p @scope/pkg binary     → pkg = @scope/pkg (-p value)
-            #
-            # The -p/--package flag explicitly names the package to install,
-            # while the following arg is the binary to run. If we extracted
-            # the binary name instead, npm would install the wrong package.
+            # Extract package name: prefer -p/--package flag, else first non-flag arg
             pkg: str | None = None
             for i, part in enumerate(parts):
                 if part in ("-p", "--package") and i + 1 < len(parts):
@@ -511,15 +496,7 @@ class SandboxSupervisor:
             self.log.warn("mcp.packages_install_error", packages=packages, exc=str(e))
 
     def _build_mcp_config(self, servers: list[dict]) -> dict[str, dict]:
-        """Convert MCP server list to OpenCode mcp config format.
-
-        OpenCode MCP config reference: https://opencode.ai/docs/mcp-servers/
-        - Local servers: {"type": "local", "command": [...], "environment": {...}}
-        - Remote servers: {"type": "remote", "url": "...", "headers": {...}}
-          For remote servers, env vars are mapped to HTTP request headers
-          (e.g. {"Authorization": "Bearer <token>"}). This is the OpenCode-
-          documented way to pass auth credentials to remote MCP endpoints.
-        """
+        """Convert MCP server list to OpenCode mcp config format."""
         config: dict[str, dict] = {}
         for server in servers:
             name = server.get("name", "")
@@ -527,8 +504,6 @@ class SandboxSupervisor:
                 continue
             if server.get("type") == "remote":
                 entry: dict = {"type": "remote", "url": server.get("url", "")}
-                # Remote auth headers — read from `headers` (new) or `env` (legacy fallback).
-                # Do NOT log this value — may contain bearer tokens / API keys.
                 auth_headers = server.get("headers") or server.get("env") or {}
                 if auth_headers:
                     entry["headers"] = auth_headers
