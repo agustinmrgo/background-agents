@@ -33,8 +33,8 @@ TTYD_VERSION = "1.7.7"
 TTYD_SHA256 = "8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55"
 
 # Cache buster - change this to force Modal image rebuild
-# v46: pre-build OpenCode plugin deps to avoid first-prompt reify
-CACHE_BUSTER = "v46-prebuilt-deps"
+# v47: pre-stage .opencode dir + symlink node_modules for faster boot
+CACHE_BUSTER = "v47-prestage-opencode"
 
 # Base image with all development tools
 base_image = (
@@ -169,10 +169,29 @@ base_image = (
             "NODE_PATH": "/usr/lib/node_modules",
         }
     )
-    # Add sandbox runtime code to the image (provider-agnostic bridge, entrypoint, tools, plugins)
+    # Add sandbox runtime code to the image (provider-agnostic bridge, entrypoint, tools, plugins).
+    # copy=True embeds files into the image layer so that run_commands can
+    # reference them in the next step (pre-staging .opencode/).
     .add_local_dir(
         str(SANDBOX_RUNTIME_DIR),
         remote_path="/app/sandbox_runtime",
+        copy=True,
+    )
+    # Pre-stage the .opencode directory layout so boot only needs a symlink
+    # for node_modules and a shallow copy for the rest (~10 small files).
+    # Layout: /app/opencode-stage/{tool/, skills/, package.json, package-lock.json, node_modules/}
+    .run_commands(
+        "mkdir -p /app/opencode-stage/tool /app/opencode-stage/skills",
+        # Tools: legacy plugin + new tools
+        "cp /app/sandbox_runtime/plugins/inspect-plugin.js"
+        " /app/opencode-stage/tool/create-pull-request.js || true",
+        "cp /app/sandbox_runtime/tools/*.js /app/opencode-stage/tool/ || true",
+        # Skills: copy each skill subdirectory
+        "cp -r /app/sandbox_runtime/skills/* /app/opencode-stage/skills/ || true",
+        # Deps: package.json, lockfile, and node_modules from pre-built cache
+        "cp /app/opencode-deps/package.json /app/opencode-deps/package-lock.json"
+        " /app/opencode-stage/",
+        "cp -a /app/opencode-deps/node_modules /app/opencode-stage/node_modules",
     )
 )
 

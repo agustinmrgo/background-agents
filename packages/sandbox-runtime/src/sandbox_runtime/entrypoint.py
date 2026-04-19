@@ -293,13 +293,59 @@ class SandboxSupervisor:
         return await self._update_existing_repo()
 
     def _install_tools(self, workdir: Path) -> None:
-        """Copy custom tools into the .opencode/tool directory for OpenCode to discover."""
+        """Populate .opencode/ from the pre-staged image directory.
+
+        The image pre-builds /app/opencode-stage/ with tools, skills, deps,
+        and node_modules already laid out.  At boot we shallow-copy the small
+        files and *symlink* node_modules to avoid the expensive copytree.
+        Falls back to the legacy per-file copy if the stage dir is missing.
+        """
+        stage_dir = Path("/app/opencode-stage")
+        opencode_dir = workdir / ".opencode"
+
+        if stage_dir.is_dir():
+            self._install_from_stage(stage_dir, opencode_dir)
+        else:
+            self._install_tools_legacy(workdir)
+
+    def _install_from_stage(self, stage_dir: Path, opencode_dir: Path) -> None:
+        """Fast path: populate .opencode/ from the pre-staged image directory."""
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+
+        # Symlink node_modules — OpenCode's Npm.install() sees the lockfile
+        # in sync and skips arborist reify(), so the tree is never mutated.
+        staged_modules = stage_dir / "node_modules"
+        local_modules = opencode_dir / "node_modules"
+        if staged_modules.is_dir() and not local_modules.exists():
+            local_modules.symlink_to(staged_modules)
+
+        # Copy package.json + package-lock.json (small files, needed alongside symlink)
+        for name in ("package.json", "package-lock.json"):
+            src = stage_dir / name
+            dest = opencode_dir / name
+            if src.exists() and not dest.exists():
+                shutil.copy2(src, dest)
+
+        # Copy tool/ directory
+        staged_tools = stage_dir / "tool"
+        local_tools = opencode_dir / "tool"
+        if staged_tools.is_dir() and not local_tools.exists():
+            shutil.copytree(staged_tools, local_tools)
+
+        # Copy skills/ directory
+        staged_skills = stage_dir / "skills"
+        local_skills = opencode_dir / "skills"
+        if staged_skills.is_dir() and not local_skills.exists():
+            shutil.copytree(staged_skills, local_skills)
+
+        self.log.info("opencode.stage_installed", skills_path=str(local_skills))
+
+    def _install_tools_legacy(self, workdir: Path) -> None:
+        """Fallback: copy tools and deps individually (pre-v47 images)."""
         opencode_dir = workdir / ".opencode"
         tool_dest = opencode_dir / "tool"
 
-        # Legacy tool (inspect-plugin.js → create-pull-request.js)
         legacy_tool = Path("/app/sandbox_runtime/plugins/inspect-plugin.js")
-        # New tools directory
         tools_dir = Path("/app/sandbox_runtime/tools")
 
         has_tools = legacy_tool.exists() or tools_dir.exists()
@@ -311,16 +357,11 @@ class SandboxSupervisor:
         if legacy_tool.exists():
             shutil.copy(legacy_tool, tool_dest / "create-pull-request.js")
 
-        # Copy all .js files from tools/ — these must export tool() for OpenCode
         if tools_dir.exists():
             for tool_file in tools_dir.iterdir():
                 if tool_file.is_file() and tool_file.suffix == ".js":
                     shutil.copy(tool_file, tool_dest / tool_file.name)
 
-        # Copy pre-built deps (package.json, package-lock.json, node_modules)
-        # from the image staging directory.  This gives OpenCode a lockfile
-        # that matches the declared dependencies so Npm.install() finds
-        # everything in sync and skips arborist reify() entirely.
         deps_cache = Path("/app/opencode-deps")
         for name in ("package.json", "package-lock.json"):
             src = deps_cache / name
@@ -448,6 +489,27 @@ class SandboxSupervisor:
                 self.log.info("code_server.stdout", line=line.decode().rstrip())
         except Exception as e:
             self.log.warn("code_server.log_forward_error", exc=e)
+
+    async def _start_sidecars(self) -> None:
+        """Start optional sidecars (code-server, ttyd). Best-effort, non-fatal."""
+        for sidecar_name, starter in (
+            ("code_server", self.start_code_server),
+            ("ttyd", self.start_ttyd),
+        ):
+            try:
+                await starter()
+            except Exception as e:
+                self.log.warn(f"{sidecar_name}.start_failed", exc=e)
+
+        if self.ttyd_process is not None:
+            ttyd_ready = await self._wait_for_port(
+                TTYD_PORT, timeout_seconds=self.SIDECAR_TIMEOUT_SECONDS
+            )
+            if ttyd_ready:
+                try:
+                    await self.start_ttyd_proxy()
+                except Exception as e:
+                    self.log.warn("ttyd_proxy.start_failed", exc=e)
 
     def _resolve_mcp_servers(self) -> list[dict]:
         """Resolve MCP servers from session config."""
@@ -671,7 +733,10 @@ class SandboxSupervisor:
             workdir = self.repo_path
 
         self._install_tools(workdir)
-        self._install_skills(workdir)
+        # Skills are included in the pre-staged directory (fast path).
+        # Only call _install_skills for legacy images without the stage dir.
+        if not Path("/app/opencode-stage").is_dir():
+            self._install_skills(workdir)
         self._install_bin_scripts()
 
         # Deploy codex auth proxy plugin if OpenAI OAuth is configured
@@ -747,7 +812,7 @@ class SandboxSupervisor:
                 except Exception as e:
                     self.log.debug("opencode.health_check_error", exc=e)
 
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.1)
 
         raise RuntimeError("OpenCode server failed to become healthy")
 
@@ -1172,6 +1237,15 @@ class SandboxSupervisor:
         git_sync_success = False
         opencode_ready = False
         try:
+            # For repo_image boots, start OpenCode and sidecars immediately —
+            # the repo directory and .opencode/ already exist in the image, so
+            # these can initialise while git sync and hooks run concurrently.
+            opencode_task: asyncio.Task | None = None
+            sidecar_task: asyncio.Task | None = None
+            if from_repo_image:
+                opencode_task = asyncio.create_task(self.start_opencode())
+                sidecar_task = asyncio.create_task(self._start_sidecars())
+
             # Phase 1: Git sync
             if restored_from_snapshot:
                 await self._update_existing_repo()  # best-effort
@@ -1211,28 +1285,18 @@ class SandboxSupervisor:
                 await self.shutdown_event.wait()
                 return
 
-            # Phase 3.5: Start optional sidecars (best-effort, non-fatal)
-            for sidecar_name, starter in (
-                ("code_server", self.start_code_server),
-                ("ttyd", self.start_ttyd),
-            ):
-                try:
-                    await starter()
-                except Exception as e:
-                    self.log.warn(f"{sidecar_name}.start_failed", exc=e)
+            # Sidecars: wait for background task or start now for other modes.
+            if sidecar_task:
+                await sidecar_task
+            else:
+                await self._start_sidecars()
 
-            if self.ttyd_process is not None:
-                ttyd_ready = await self._wait_for_port(
-                    TTYD_PORT, timeout_seconds=self.SIDECAR_TIMEOUT_SECONDS
-                )
-                if ttyd_ready:
-                    try:
-                        await self.start_ttyd_proxy()
-                    except Exception as e:
-                        self.log.warn("ttyd_proxy.start_failed", exc=e)
-
-            # Phase 4: Start OpenCode server (in repo directory)
-            await self.start_opencode()
+            # Phase 4: Wait for OpenCode (already started for repo_image,
+            # start now for other boot modes).
+            if opencode_task:
+                await opencode_task
+            else:
+                await self.start_opencode()
             opencode_ready = True
 
             # Phase 5: Start bridge (after OpenCode is ready)
