@@ -46,6 +46,9 @@ yarn-error.log*
 coverage/
 .nyc_output/
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # Cloudflare
 .wrangler/
 .dev.vars
