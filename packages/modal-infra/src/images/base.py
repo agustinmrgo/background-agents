@@ -169,10 +169,13 @@ base_image = (
             "NODE_PATH": "/usr/lib/node_modules",
         }
     )
-    # Add sandbox runtime code to the image (provider-agnostic bridge, entrypoint, tools, plugins)
+    # Add sandbox runtime code to the image (provider-agnostic bridge, entrypoint, tools, plugins).
+    # copy=True embeds files into the image layer so that run_commands can
+    # reference them in the next step (pre-staging .opencode/).
     .add_local_dir(
         str(SANDBOX_RUNTIME_DIR),
         remote_path="/app/sandbox_runtime",
+        copy=True,
     )
     # Pre-stage the .opencode directory layout so boot only needs a symlink
     # for node_modules and a shallow copy for the rest (~10 small files).
