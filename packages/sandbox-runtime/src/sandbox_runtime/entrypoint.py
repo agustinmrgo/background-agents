@@ -1237,13 +1237,11 @@ class SandboxSupervisor:
         git_sync_success = False
         opencode_ready = False
         try:
-            # For repo_image boots, start OpenCode and sidecars immediately —
-            # the repo directory and .opencode/ already exist in the image, so
-            # these can initialise while git sync and hooks run concurrently.
-            opencode_task: asyncio.Task | None = None
+            # For repo_image boots, start sidecars immediately — the repo
+            # directory already exists in the image and sidecars don't write
+            # to .opencode/, so they can initialise during git sync + hooks.
             sidecar_task: asyncio.Task | None = None
             if from_repo_image:
-                opencode_task = asyncio.create_task(self.start_opencode())
                 sidecar_task = asyncio.create_task(self._start_sidecars())
 
             # Phase 1: Git sync
@@ -1285,8 +1283,12 @@ class SandboxSupervisor:
                 await self.shutdown_event.wait()
                 return
 
-            # Sidecars: wait for background task or start now for other modes.
-            if sidecar_task:
+            # Start OpenCode after hooks complete (it writes .opencode/ and
+            # may depend on hook side effects). Run concurrently with the
+            # sidecar wait so both resolve in parallel.
+            opencode_task: asyncio.Task | None = None
+            if from_repo_image and sidecar_task:
+                opencode_task = asyncio.create_task(self.start_opencode())
                 await sidecar_task
             else:
                 await self._start_sidecars()
