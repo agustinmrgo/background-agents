@@ -470,6 +470,27 @@ class SandboxSupervisor:
         except Exception as e:
             self.log.warn("code_server.log_forward_error", exc=e)
 
+    async def _start_sidecars(self) -> None:
+        """Start optional sidecars (code-server, ttyd). Best-effort, non-fatal."""
+        for sidecar_name, starter in (
+            ("code_server", self.start_code_server),
+            ("ttyd", self.start_ttyd),
+        ):
+            try:
+                await starter()
+            except Exception as e:
+                self.log.warn(f"{sidecar_name}.start_failed", exc=e)
+
+        if self.ttyd_process is not None:
+            ttyd_ready = await self._wait_for_port(
+                TTYD_PORT, timeout_seconds=self.SIDECAR_TIMEOUT_SECONDS
+            )
+            if ttyd_ready:
+                try:
+                    await self.start_ttyd_proxy()
+                except Exception as e:
+                    self.log.warn("ttyd_proxy.start_failed", exc=e)
+
     def _resolve_mcp_servers(self) -> list[dict]:
         """Resolve MCP servers from session config."""
         return self.session_config.get("mcp_servers") or []
@@ -1196,12 +1217,14 @@ class SandboxSupervisor:
         git_sync_success = False
         opencode_ready = False
         try:
-            # For repo_image boots, start OpenCode immediately — the repo
-            # directory and .opencode/ already exist in the image, so
-            # OpenCode can initialise while git sync and hooks run.
+            # For repo_image boots, start OpenCode and sidecars immediately —
+            # the repo directory and .opencode/ already exist in the image, so
+            # these can initialise while git sync and hooks run concurrently.
             opencode_task: asyncio.Task | None = None
+            sidecar_task: asyncio.Task | None = None
             if from_repo_image:
                 opencode_task = asyncio.create_task(self.start_opencode())
+                sidecar_task = asyncio.create_task(self._start_sidecars())
 
             # Phase 1: Git sync
             if restored_from_snapshot:
@@ -1238,25 +1261,11 @@ class SandboxSupervisor:
                 await self.shutdown_event.wait()
                 return
 
-            # Phase 3.5: Start optional sidecars (best-effort, non-fatal)
-            for sidecar_name, starter in (
-                ("code_server", self.start_code_server),
-                ("ttyd", self.start_ttyd),
-            ):
-                try:
-                    await starter()
-                except Exception as e:
-                    self.log.warn(f"{sidecar_name}.start_failed", exc=e)
-
-            if self.ttyd_process is not None:
-                ttyd_ready = await self._wait_for_port(
-                    TTYD_PORT, timeout_seconds=self.SIDECAR_TIMEOUT_SECONDS
-                )
-                if ttyd_ready:
-                    try:
-                        await self.start_ttyd_proxy()
-                    except Exception as e:
-                        self.log.warn("ttyd_proxy.start_failed", exc=e)
+            # Sidecars: wait for background task or start now for other modes.
+            if sidecar_task:
+                await sidecar_task
+            else:
+                await self._start_sidecars()
 
             # Phase 4: Wait for OpenCode (already started for repo_image,
             # start now for other boot modes).
