@@ -304,7 +304,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
       >
         {loading ? (
           <div className="flex justify-center py-8">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-muted-foreground" />
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-current border-t-transparent text-muted-foreground" />
           </div>
         ) : sessions.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">No sessions yet</div>
@@ -326,7 +326,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
             {inactiveSessions.length > 0 && (
               <>
                 <div className="px-4 py-2 mt-2">
-                  <span className="text-xs font-medium text-secondary-foreground uppercase tracking-wide">
+                  <span className="text-xs font-medium text-secondary-foreground uppercase tracking-wider">
                     Inactive
                   </span>
                 </div>
@@ -345,7 +345,7 @@ export function SessionSidebar({ onNewSession, onToggle, onSessionSelect }: Sess
 
             {loadingMore && (
               <div className="flex justify-center py-3">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-muted-foreground" />
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent text-muted-foreground" />
               </div>
             )}
           </>
@@ -361,6 +361,7 @@ function UserMenu({ user }: { user?: { name?: string | null; image?: string | nu
       <DropdownMenuTrigger asChild>
         <button
           className="w-7 h-7 rounded-full overflow-hidden focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label={`Signed in as ${user?.name || "User"}`}
           title={`Signed in as ${user?.name || "User"}`}
         >
           {user?.image ? (
@@ -663,6 +664,8 @@ function SessionListItem({
             <button
               type="button"
               aria-label="Session actions"
+              aria-hidden={isMobile ? "true" : undefined}
+              tabIndex={isMobile ? -1 : undefined}
               className={`h-6 w-6 items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition data-[state=open]:opacity-100 ${
                 isMobile
                   ? "pointer-events-none flex opacity-0"

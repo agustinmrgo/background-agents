@@ -23,15 +23,15 @@ interface TimeseriesChartProps {
 
 const SERIES_COLORS = [
   "var(--accent)",
-  "#28c840",
-  "#3b82f6",
-  "#c08429",
-  "#ef4444",
-  "#0f766e",
-  "#8b5cf6",
-  "#ea580c",
-  "#14b8a6",
-  "#e11d48",
+  "var(--success)",
+  "var(--info)",
+  "#c49135",
+  "var(--destructive)",
+  "#3d8a82",
+  "#8672a8",
+  "#cc6e35",
+  "#5a9e8f",
+  "#b54860",
 ];
 
 export function AnalyticsTimeseriesChart({ series, loading }: TimeseriesChartProps) {

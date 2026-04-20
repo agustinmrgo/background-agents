@@ -195,13 +195,9 @@ function EnvRowsEditor({
         <Label>
           {label} <span className="text-muted-foreground font-normal">(optional)</span>
         </Label>
-        <button
-          type="button"
-          onClick={addRow}
-          className="text-xs text-muted-foreground hover:text-foreground transition"
-        >
+        <Button type="button" variant="subtle" size="xs" onClick={addRow}>
           + Add
-        </button>
+        </Button>
       </div>
       {hasExistingCredentials && form.envRows.every((r) => !r.value.trim()) && (
         <p className="text-xs text-muted-foreground mb-1">
@@ -230,7 +226,7 @@ function EnvRowsEditor({
             <button
               type="button"
               onClick={() => removeRow(row.id)}
-              className="px-1.5 text-muted-foreground hover:text-red-400 transition"
+              className="px-1.5 text-muted-foreground hover:text-destructive transition"
               aria-label="Remove"
             >
               <svg
@@ -247,7 +243,7 @@ function EnvRowsEditor({
         ))}
       </div>
       <p className="text-xs text-muted-foreground mt-1">
-        Paste a <code className="text-[11px]">.env</code> block into any field to import multiple
+        Paste a <code className="text-xs">.env</code> block into any field to import multiple
         entries.
       </p>
     </div>
@@ -274,7 +270,7 @@ function McpServerForm({
   return (
     <>
       <div>
-        <Label className="mb-1">Name</Label>
+        <Label className="mb-1.5">Name</Label>
         <Input
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -283,7 +279,7 @@ function McpServerForm({
       </div>
 
       <div>
-        <Label className="mb-1">Type</Label>
+        <Label className="mb-1.5">Type</Label>
         <div className="flex gap-2">
           <button
             onClick={() => setForm({ ...form, type: "local" })}
@@ -312,7 +308,7 @@ function McpServerForm({
 
       {form.type === "remote" ? (
         <div>
-          <Label className="mb-1">URL</Label>
+          <Label className="mb-1.5">URL</Label>
           <Input
             type="url"
             value={form.url}
@@ -322,7 +318,7 @@ function McpServerForm({
         </div>
       ) : (
         <div>
-          <Label className="mb-1">Command</Label>
+          <Label className="mb-1.5">Command</Label>
           <Input
             value={form.command}
             onChange={(e) => setForm({ ...form, command: e.target.value })}
@@ -341,7 +337,7 @@ function McpServerForm({
       />
 
       <div>
-        <Label className="mb-2">Availability</Label>
+        <Label className="mb-1.5">Availability</Label>
         <div className="space-y-2 mb-2">
           <RadioCard
             name={`scope-mode-${radioPrefix}`}
@@ -396,7 +392,7 @@ function McpServerForm({
               </div>
             )}
             {form.repoScopes.length === 0 && repos.length > 0 && (
-              <p className="text-xs text-amber-500 mt-1">
+              <p className="text-xs text-warning mt-1">
                 Select a repository or switch to &quot;All repositories&quot;.
               </p>
             )}
@@ -556,11 +552,7 @@ export function McpServersSettings() {
         <div className="border border-border rounded-md p-4 mb-6 space-y-4">
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-medium text-foreground">New MCP Server</h3>
-            <button
-              onClick={cancel}
-              className="p-1 text-muted-foreground hover:text-foreground transition"
-              aria-label="Close"
-            >
+            <Button variant="ghost" size="icon" onClick={cancel} aria-label="Close">
               <svg
                 className="w-4 h-4"
                 fill="none"
@@ -570,7 +562,7 @@ export function McpServersSettings() {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </button>
+            </Button>
           </div>
           <McpServerForm
             form={form}
@@ -611,11 +603,12 @@ export function McpServersSettings() {
                 }`}
               >
                 {/* Header row */}
-                <div
-                  className="flex items-center justify-between px-4 py-3 cursor-pointer"
-                  onClick={() => startEdit(server)}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center justify-between px-4 py-3">
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 min-w-0 cursor-pointer text-left"
+                    onClick={() => startEdit(server)}
+                  >
                     <ChevronRightIcon
                       className={`w-3 h-3 text-muted-foreground flex-shrink-0 transition-transform ${
                         isExpanded ? "rotate-90" : ""
@@ -644,12 +637,9 @@ export function McpServersSettings() {
                         )}
                       </div>
                     </div>
-                  </div>
+                  </button>
 
-                  <div
-                    className="flex items-center gap-1 flex-shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <Switch
                       checked={server.enabled}
                       onCheckedChange={() => handleToggle(server)}
@@ -657,7 +647,7 @@ export function McpServersSettings() {
                     />
                     <button
                       onClick={() => setDeleteTarget(server.id)}
-                      className="px-2 py-1 text-xs text-red-400 hover:text-red-300 transition"
+                      className="px-2 py-1 text-xs text-destructive hover:text-destructive/80 transition"
                     >
                       Delete
                     </button>
@@ -666,7 +656,7 @@ export function McpServersSettings() {
 
                 {/* Expanded edit form */}
                 {isExpanded && editing === server.id && (
-                  <div className="px-4 pb-4 pt-3 border-t border-border space-y-4">
+                  <div className="px-4 pb-4 pt-3 border-t border-border-muted space-y-4">
                     <McpServerForm
                       form={form}
                       setForm={setForm}

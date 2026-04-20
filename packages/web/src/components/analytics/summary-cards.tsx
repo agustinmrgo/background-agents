@@ -12,7 +12,7 @@ function SummaryCard({ label, value, hint }: { label: string; value: string; hin
   return (
     <div className="relative overflow-hidden rounded-md border border-border-muted bg-card p-4">
       <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--accent),transparent)]" />
-      <div className="text-xs uppercase tracking-[0.16em] text-secondary-foreground">{label}</div>
+      <div className="text-xs uppercase tracking-wider text-secondary-foreground">{label}</div>
       <div className="mt-3 text-2xl font-semibold text-foreground">{value}</div>
       <div className="mt-2 text-sm text-muted-foreground">{hint}</div>
     </div>
@@ -41,10 +41,10 @@ export function AnalyticsSummaryCards({ days, summary, loading }: SummaryCardsPr
 
   const statusTiles = [
     ["completed", summary.statusBreakdown.completed, "bg-success"],
-    ["active", summary.statusBreakdown.active, "bg-blue-500"],
+    ["active", summary.statusBreakdown.active, "bg-info"],
     ["created", summary.statusBreakdown.created, "bg-secondary-foreground"],
-    ["failed", summary.statusBreakdown.failed, "bg-red-600"],
-    ["cancelled", summary.statusBreakdown.cancelled, "bg-red-400"],
+    ["failed", summary.statusBreakdown.failed, "bg-destructive"],
+    ["cancelled", summary.statusBreakdown.cancelled, "bg-destructive/60"],
     ["archived", summary.statusBreakdown.archived, "bg-muted-foreground"],
   ] as const;
 
@@ -81,7 +81,7 @@ export function AnalyticsSummaryCards({ days, summary, loading }: SummaryCardsPr
       <div className="rounded-md border border-border-muted bg-card px-4 py-3">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.16em] text-secondary-foreground">
+            <div className="text-xs uppercase tracking-wider text-secondary-foreground">
               Status Mix
             </div>
             <div className="mt-1 text-sm text-muted-foreground">
@@ -101,7 +101,7 @@ export function AnalyticsSummaryCards({ days, summary, loading }: SummaryCardsPr
                 key={label}
                 className="rounded-md border border-border-muted bg-background px-3 py-3"
               >
-                <div className="text-[11px] uppercase tracking-[0.14em] text-secondary-foreground">
+                <div className="text-xs uppercase tracking-wider text-secondary-foreground">
                   {label}
                 </div>
                 <div className="mt-2 text-lg font-semibold text-foreground">
