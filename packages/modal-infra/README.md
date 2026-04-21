@@ -207,10 +207,4 @@ Development utilities available via Modal CLI:
 ```bash
 # Check service health
 modal run src/cli.py::check_health
-
-# List registered repositories
-modal run src/cli.py::list_repos
-
-# Register a repository (for testing)
-modal run src/cli.py::register_repo --owner your-org --name your-repo
 ```
