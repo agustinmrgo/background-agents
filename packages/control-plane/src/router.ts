@@ -803,7 +803,9 @@ async function handleCreateSession(
   const repoOwner = body.repoOwner.toLowerCase();
   const repoName = body.repoName.toLowerCase();
 
-  const resolved = await resolveRepoOrError(env, repoOwner, repoName, ctx, logger);
+  const resolved = await ctx.metrics.time("resolve_repo", () =>
+    resolveRepoOrError(env, repoOwner, repoName, ctx, logger)
+  );
   if (resolved instanceof Response) return resolved;
 
   const { repoId, defaultBranch } = resolved;
@@ -817,7 +819,9 @@ async function handleCreateSession(
   if (providerIdentity) {
     try {
       const userStore = new UserStore(env.DB);
-      const resolvedUser = await userStore.resolveOrCreateUser(providerIdentity);
+      const resolvedUser = await ctx.metrics.time("resolve_user", () =>
+        userStore.resolveOrCreateUser(providerIdentity)
+      );
       resolvedUserId = resolvedUser.id;
     } catch (e) {
       logger.warn("Failed to resolve user identity, session will have no user_id", {
@@ -874,42 +878,46 @@ async function handleCreateSession(
       : null;
 
   // Resolve code-server integration setting and sandbox settings for this repo
-  const [codeServerEnabled, sandboxSettings] = await Promise.all([
-    resolveCodeServerEnabled(env.DB, repoOwner, repoName),
-    resolveSandboxSettings(env.DB, repoOwner, repoName),
-  ]);
+  const [codeServerEnabled, sandboxSettings] = await ctx.metrics.time("resolve_settings", () =>
+    Promise.all([
+      resolveCodeServerEnabled(env.DB, repoOwner, repoName),
+      resolveSandboxSettings(env.DB, repoOwner, repoName),
+    ])
+  );
 
   // Initialize session with user info and optional encrypted token
-  const initResponse = await stub.fetch(
-    internalRequest(
-      buildSessionInternalUrl(SessionInternalPaths.init),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionName: sessionId, // Pass the session name for WebSocket routing
-          repoOwner,
-          repoName,
-          repoId,
-          defaultBranch,
-          branch: body.branch,
-          title: body.title,
-          model,
-          reasoningEffort,
-          userId,
-          scmLogin,
-          scmName,
-          scmEmail,
-          scmTokenEncrypted,
-          scmRefreshTokenEncrypted,
-          scmTokenExpiresAt,
-          scmUserId,
-          codeServerEnabled,
-          sandboxSettings,
-          spawnSource: body.spawnSource,
-        }),
-      },
-      ctx
+  const initResponse = await ctx.metrics.time("do_init", () =>
+    stub.fetch(
+      internalRequest(
+        buildSessionInternalUrl(SessionInternalPaths.init),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionName: sessionId, // Pass the session name for WebSocket routing
+            repoOwner,
+            repoName,
+            repoId,
+            defaultBranch,
+            branch: body.branch,
+            title: body.title,
+            model,
+            reasoningEffort,
+            userId,
+            scmLogin,
+            scmName,
+            scmEmail,
+            scmTokenEncrypted,
+            scmRefreshTokenEncrypted,
+            scmTokenExpiresAt,
+            scmUserId,
+            codeServerEnabled,
+            sandboxSettings,
+            spawnSource: body.spawnSource,
+          }),
+        },
+        ctx
+      )
     )
   );
 
@@ -939,21 +947,23 @@ async function handleCreateSession(
   // Store session in D1 index for listing
   const now = Date.now();
   const sessionStore = new SessionIndexStore(env.DB);
-  await sessionStore.create({
-    id: sessionId,
-    title: body.title || null,
-    repoOwner,
-    repoName,
-    model,
-    reasoningEffort,
-    baseBranch: body.branch || defaultBranch || "main",
-    status: "created",
-    spawnSource: body.spawnSource,
-    scmLogin: scmLogin || null,
-    userId: resolvedUserId,
-    createdAt: now,
-    updatedAt: now,
-  });
+  await ctx.metrics.time("d1_session_index_create", () =>
+    sessionStore.create({
+      id: sessionId,
+      title: body.title || null,
+      repoOwner,
+      repoName,
+      model,
+      reasoningEffort,
+      baseBranch: body.branch || defaultBranch || "main",
+      status: "created",
+      spawnSource: body.spawnSource,
+      scmLogin: scmLogin || null,
+      userId: resolvedUserId,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
 
   const result: CreateSessionResponse = {
     sessionId,
