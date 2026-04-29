@@ -232,7 +232,7 @@ export class SandboxLifecycleManager {
   private isSpawningSandbox = false;
 
   /** Session-scoped logger. Falls back to module-level logger if no sessionId configured. */
-  private readonly log: Logger;
+  private log: Logger;
 
   constructor(
     private readonly provider: SandboxProvider,
@@ -246,6 +246,10 @@ export class SandboxLifecycleManager {
     private readonly repoImageLookup?: RepoImageLookup
   ) {
     this.log = config.sessionId ? log.child({ session_id: config.sessionId }) : log;
+  }
+
+  setLog(log: Logger): void {
+    this.log = log;
   }
 
   /**

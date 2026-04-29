@@ -57,6 +57,10 @@ interface StopExecutionOptions {
 export class SessionMessageQueue {
   constructor(private readonly deps: MessageQueueDeps) {}
 
+  setLog(log: Logger): void {
+    this.deps.log = log;
+  }
+
   async handlePromptMessage(ws: WebSocket, data: PromptMessageData): Promise<void> {
     const client = this.deps.getClientInfo(ws);
     if (!client) {

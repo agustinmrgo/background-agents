@@ -69,7 +69,7 @@ export function getAvatarUrl(
 export class ParticipantService {
   private readonly repository: ParticipantRepository;
   private readonly env: ParticipantServiceEnv;
-  private readonly log: Logger;
+  private log: Logger;
   private readonly generateId: () => string;
   private readonly userScmTokenStore: UserScmTokenStore | null;
 
@@ -79,6 +79,10 @@ export class ParticipantService {
     this.log = deps.log;
     this.generateId = deps.generateId;
     this.userScmTokenStore = deps.userScmTokenStore ?? null;
+  }
+
+  setLog(log: Logger): void {
+    this.log = log;
   }
 
   /**

@@ -729,7 +729,7 @@ export class SessionDO extends DurableObject<Env> {
       };
     }
 
-    return new SandboxLifecycleManager(
+    const manager = new SandboxLifecycleManager(
       provider,
       storage,
       broadcaster,
@@ -742,6 +742,8 @@ export class SessionDO extends DurableObject<Env> {
       },
       repoImageLookup
     );
+    manager.setLog(this.log);
+    return manager;
   }
 
   /**
@@ -776,6 +778,16 @@ export class SessionDO extends DurableObject<Env> {
 
     this.log = this.log.child({ sandbox_id: sandboxId });
     this.loggerSandboxId = sandboxId;
+    this.rebindLoggerConsumers();
+  }
+
+  private rebindLoggerConsumers(): void {
+    this._wsManager?.setLog(this.log);
+    this._lifecycleManager?.setLog(this.log);
+    this._participantService?.setLog(this.log);
+    this._callbackService?.setLog(this.log);
+    this._messageQueue?.setLog(this.log);
+    this._sandboxEventProcessor?.setLog(this.log);
   }
 
   /**
@@ -843,10 +855,14 @@ export class SessionDO extends DurableObject<Env> {
 
       return new Response("Not Found", { status: 404 });
     } finally {
-      this.log =
+      const restoredLogger =
         this.loggerSandboxId && this.loggerSandboxId !== originalLoggerSandboxId
           ? originalLogger.child({ sandbox_id: this.loggerSandboxId })
           : originalLogger;
+      this.log = restoredLogger;
+      if (traceId || requestId || this.loggerSandboxId !== originalLoggerSandboxId) {
+        this.rebindLoggerConsumers();
+      }
     }
   }
 

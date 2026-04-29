@@ -41,6 +41,10 @@ export class SessionSandboxEventProcessor {
 
   constructor(private readonly deps: SessionSandboxEventProcessorDeps) {}
 
+  setLog(log: Logger): void {
+    this.deps.log = log;
+  }
+
   async processSandboxEvent(event: SandboxEventWithAck): Promise<void> {
     const sandboxId = "sandboxId" in event ? event.sandboxId : undefined;
 

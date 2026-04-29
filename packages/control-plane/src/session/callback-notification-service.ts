@@ -44,7 +44,7 @@ export interface CallbackServiceDeps {
 export class CallbackNotificationService {
   private readonly repository: CallbackRepository;
   private readonly env: CallbackServiceEnv;
-  private readonly log: Logger;
+  private log: Logger;
   private readonly getSessionId: () => string;
   private _lastToolCallCallbackTs = 0;
 
@@ -53,6 +53,10 @@ export class CallbackNotificationService {
     this.env = deps.env;
     this.log = deps.log;
     this.getSessionId = deps.getSessionId;
+  }
+
+  setLog(log: Logger): void {
+    this.log = log;
   }
 
   /**

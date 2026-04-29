@@ -32,6 +32,9 @@ export interface WebSocketManagerConfig {
 // ---------------------------------------------------------------------------
 
 export interface SessionWebSocketManager {
+  /** Replace the logger used by this long-lived manager. */
+  setLog(log: Logger): void;
+
   /** Accept a client WebSocket with a wsId tag for hibernation recovery. */
   acceptClientSocket(ws: WebSocket, wsId: string): void;
 
@@ -94,9 +97,13 @@ export class SessionWebSocketManagerImpl implements SessionWebSocketManager {
   constructor(
     private readonly ctx: DurableObjectState,
     private readonly repository: SessionRepository,
-    private readonly log: Logger,
+    private log: Logger,
     private readonly config: WebSocketManagerConfig
   ) {}
+
+  setLog(log: Logger): void {
+    this.log = log;
+  }
 
   // -------------------------------------------------------------------------
   // Accept
