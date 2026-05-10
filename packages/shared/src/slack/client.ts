@@ -42,11 +42,16 @@ async function slackFetch<T extends SlackResponseBase>(
     body = JSON.stringify(init.body);
   }
 
-  const response = await fetch(url, {
-    method: init?.method ?? "GET",
-    headers,
-    body,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: init?.method ?? "GET",
+      headers,
+      body,
+    });
+  } catch {
+    return { ok: false, error: "network_error" } as T;
+  }
 
   if (response.status === 429) {
     const retryHeader = response.headers.get("retry-after");
@@ -107,6 +112,7 @@ export async function postMessage(
   }
 ): Promise<{
   ok: boolean;
+  channel?: string;
   ts?: string;
   error?: string;
   retryAfter?: number;
@@ -120,6 +126,22 @@ export async function postMessage(
       blocks: options?.blocks,
       reply_broadcast: options?.reply_broadcast,
     },
+  });
+}
+
+export async function getPermalink(
+  token: string,
+  channel: string,
+  messageTs: string
+): Promise<{
+  ok: boolean;
+  permalink?: string;
+  channel?: string;
+  error?: string;
+  retryAfter?: number;
+}> {
+  return slackFetch(token, "chat.getPermalink", {
+    query: { channel, message_ts: messageTs },
   });
 }
 
