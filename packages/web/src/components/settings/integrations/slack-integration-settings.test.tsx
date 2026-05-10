@@ -80,6 +80,14 @@ function repo(fullName: string): EnrichedRepository {
   } as unknown as EnrichedRepository;
 }
 
+/** Scope queries to the "Repository overrides" section so they don't collide with the Repository Scope checkbox list, which can also render the same repo names. */
+function overridesSectionElement(): HTMLElement {
+  const heading = screen.getByRole("heading", { level: 4, name: /repository overrides/i });
+  const section = heading.closest("section");
+  if (!section) throw new Error("Repository overrides section not found");
+  return section;
+}
+
 // Radix Select uses pointer-capture APIs that jsdom doesn't implement.
 beforeAll(() => {
   if (!Element.prototype.hasPointerCapture) {
@@ -179,6 +187,92 @@ describe("SlackIntegrationSettings", () => {
     expect(body.settings.defaults?.mentionsPolicy).toBe("escape");
   });
 
+  it("defaults to 'All repositories' scope and omits enabledRepos on save", async () => {
+    const user = userEvent.setup();
+    setupSWR({ global: null, availableRepos: [repo("acme/web"), repo("acme/api")] });
+    fetchMock.mockResolvedValue(okJson({}));
+
+    render(<SlackIntegrationSettings />);
+
+    expect(
+      (screen.getByRole("radio", { name: /all repositories/i }) as HTMLInputElement).checked
+    ).toBe(true);
+
+    await user.click(screen.getByRole("switch", { name: /enable agent notifications/i }));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body as string) as { settings: SlackGlobalConfig };
+    expect(body.settings.enabledRepos).toBeUndefined();
+  });
+
+  it("switching to 'Selected' and toggling repos sends enabledRepos array on save", async () => {
+    const user = userEvent.setup();
+    setupSWR({ global: null, availableRepos: [repo("acme/web"), repo("acme/api")] });
+    fetchMock.mockResolvedValue(okJson({}));
+
+    render(<SlackIntegrationSettings />);
+
+    await user.click(screen.getByRole("radio", { name: /selected repositories/i }));
+    await user.click(screen.getByRole("checkbox", { name: "acme/api" }));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body as string) as { settings: SlackGlobalConfig };
+    expect(body.settings.enabledRepos).toEqual(["acme/api"]);
+  });
+
+  it("hydrates 'Selected' mode with checked repos when settings.enabledRepos is set", () => {
+    setupSWR({
+      global: {
+        enabledRepos: ["acme/web"],
+        defaults: { agentNotificationsEnabled: true, mentionsPolicy: "allow" },
+      },
+      availableRepos: [repo("acme/web"), repo("acme/api")],
+    });
+    render(<SlackIntegrationSettings />);
+
+    expect(
+      (screen.getByRole("radio", { name: /selected repositories/i }) as HTMLInputElement).checked
+    ).toBe(true);
+    expect(screen.getByRole("checkbox", { name: "acme/web" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "acme/api" })).not.toBeChecked();
+  });
+
+  it("switching from 'Selected' back to 'All' omits enabledRepos on save", async () => {
+    const user = userEvent.setup();
+    setupSWR({
+      global: {
+        enabledRepos: ["acme/web"],
+        defaults: { agentNotificationsEnabled: true, mentionsPolicy: "allow" },
+      },
+      availableRepos: [repo("acme/web"), repo("acme/api")],
+    });
+    fetchMock.mockResolvedValue(okJson({}));
+
+    render(<SlackIntegrationSettings />);
+
+    await user.click(screen.getByRole("radio", { name: /all repositories/i }));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body as string) as { settings: SlackGlobalConfig };
+    expect(body.settings.enabledRepos).toBeUndefined();
+  });
+
+  it("warns when 'Selected' mode is on but no repositories are selected", async () => {
+    const user = userEvent.setup();
+    setupSWR({ global: null, availableRepos: [repo("acme/web")] });
+
+    render(<SlackIntegrationSettings />);
+
+    await user.click(screen.getByRole("radio", { name: /selected repositories/i }));
+
+    expect(
+      screen.getByText(/no repositories selected.*agents will not be able to post slack/i)
+    ).toBeInTheDocument();
+  });
+
   it("renders populated settings with master switch on and policy 'strip'", () => {
     setupSWR({
       global: {
@@ -232,7 +326,8 @@ describe("SlackIntegrationSettings", () => {
 
     render(<SlackIntegrationSettings />);
 
-    const row = screen.getByText("acme/web").closest("div")!.parentElement!;
+    const overridesSection = overridesSectionElement();
+    const row = within(overridesSection).getByText("acme/web").closest("div")!.parentElement!;
     const overrideToggle = within(row).getByRole("combobox");
     await user.click(overrideToggle);
     await user.click(await screen.findByRole("option", { name: /override.*off/i }));
@@ -258,7 +353,8 @@ describe("SlackIntegrationSettings", () => {
 
     render(<SlackIntegrationSettings />);
 
-    const row = screen.getByText("acme/web").closest("div")!.parentElement!;
+    const overridesSection = overridesSectionElement();
+    const row = within(overridesSection).getByText("acme/web").closest("div")!.parentElement!;
     await user.click(within(row).getByRole("button", { name: /remove/i }));
 
     expect(fetchMock).toHaveBeenCalledWith(

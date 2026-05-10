@@ -17,7 +17,11 @@ import {
   type SlackNotifySuccessOutput,
 } from "@open-inspect/shared";
 import { generateId } from "../auth/crypto";
-import { IntegrationSettingsStore, resolveSlackSettings } from "../db/integration-settings";
+import {
+  IntegrationSettingsStore,
+  isRepoInScope,
+  resolveSlackSettings,
+} from "../db/integration-settings";
 import { SessionIndexStore } from "../db/session-index";
 import { createLogger } from "../logger";
 import { buildSessionInternalUrl, SessionInternalPaths } from "../session/contracts";
@@ -82,7 +86,14 @@ export async function handleSlackNotify(
   }
 
   const settingsStore = new IntegrationSettingsStore(env.DB);
-  const { settings } = await settingsStore.getResolvedConfig("slack", repo);
+  const { enabledRepos, settings } = await settingsStore.getResolvedConfig("slack", repo);
+  if (!isRepoInScope(enabledRepos, repo)) {
+    await emitDenial(env, sessionId, ctx, parsed, attribution, "repo_out_of_scope");
+    return failureResponse(
+      "repo_out_of_scope",
+      "This repository is outside the configured Slack scope."
+    );
+  }
   const { agentNotificationsEnabled, mentionsPolicy } = resolveSlackSettings(
     settings as Partial<SlackGlobalSettings>
   );

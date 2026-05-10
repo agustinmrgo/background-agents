@@ -22,6 +22,10 @@ const DENIAL_COPY: Record<SlackDenialReason, { headline: string; hint?: string }
   feature_disabled: {
     headline: "Slack notifications are disabled for this repository.",
   },
+  repo_out_of_scope: {
+    headline: "This repository is outside the configured Slack scope.",
+    hint: "Add the repo to the Slack integration's Repository Scope, or switch the scope to all repositories.",
+  },
   empty_message_after_sanitization: {
     headline: "Message was empty after sanitization, so nothing was posted.",
   },

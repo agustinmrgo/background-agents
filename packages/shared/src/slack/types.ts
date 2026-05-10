@@ -18,6 +18,7 @@ import type { SlackMentionsPolicy } from "../types/integrations";
 export const SLACK_DENIAL_REASONS = [
   "feature_unavailable",
   "feature_disabled",
+  "repo_out_of_scope",
   "empty_message_after_sanitization",
   "channel_not_found_or_forbidden",
   "rate_limited",
@@ -31,6 +32,7 @@ export type SlackDenialReason = (typeof SLACK_DENIAL_REASONS)[number];
 export const SLACK_DENIAL_STATUS: Record<SlackDenialReason, number> = {
   feature_unavailable: 503,
   feature_disabled: 403,
+  repo_out_of_scope: 403,
   empty_message_after_sanitization: 422,
   channel_not_found_or_forbidden: 404,
   rate_limited: 429,

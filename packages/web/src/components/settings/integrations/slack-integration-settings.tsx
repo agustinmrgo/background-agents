@@ -13,6 +13,7 @@ import {
 } from "@open-inspect/shared";
 import { IntegrationSettingsSkeleton } from "./integration-settings-skeleton";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RadioCard } from "@/components/ui/form-controls";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -109,11 +110,11 @@ export function SlackIntegrationSettings() {
         </p>
       </Section>
 
-      <GlobalSettingsSection settings={settings} />
+      <GlobalSettingsSection settings={settings} availableRepos={availableRepos} />
 
       <Section
         title="Repository overrides"
-        description="Override the master switch for specific repositories. Mentions policy is workspace-wide and is not overridable per repo."
+        description="Override the master switch for specific repositories within the configured scope (see Repository Scope above). Mentions policy is workspace-wide and is not overridable per repo."
       >
         <RepoOverridesSection overrides={repoOverrides} availableRepos={availableRepos} />
       </Section>
@@ -121,12 +122,22 @@ export function SlackIntegrationSettings() {
   );
 }
 
-function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | null | undefined }) {
+function GlobalSettingsSection({
+  settings,
+  availableRepos,
+}: {
+  settings: SlackGlobalConfig | null | undefined;
+  availableRepos: EnrichedRepository[];
+}) {
   const [agentNotificationsEnabled, setAgentNotificationsEnabled] = useState(
     settings?.defaults?.agentNotificationsEnabled ?? false
   );
   const [mentionsPolicy, setMentionsPolicy] = useState<SlackMentionsPolicy>(
     settings?.defaults?.mentionsPolicy ?? DEFAULT_MENTIONS_POLICY
+  );
+  const [enabledRepos, setEnabledRepos] = useState<string[]>(settings?.enabledRepos ?? []);
+  const [repoScopeMode, setRepoScopeMode] = useState<"all" | "selected">(
+    settings?.enabledRepos === undefined ? "all" : "selected"
   );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -136,9 +147,19 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
     if (settings === undefined || dirty || saving) return;
     setAgentNotificationsEnabled(settings?.defaults?.agentNotificationsEnabled ?? false);
     setMentionsPolicy(settings?.defaults?.mentionsPolicy ?? DEFAULT_MENTIONS_POLICY);
+    setEnabledRepos(settings?.enabledRepos ?? []);
+    setRepoScopeMode(settings?.enabledRepos === undefined ? "all" : "selected");
   }, [settings, dirty, saving]);
 
   const isConfigured = settings !== null && settings !== undefined;
+
+  const toggleRepo = (fullName: string) => {
+    const lower = fullName.toLowerCase();
+    setEnabledRepos((prev) =>
+      prev.includes(lower) ? prev.filter((r) => r !== lower) : [...prev, lower]
+    );
+    setDirty(true);
+  };
 
   const handleConfirmReset = async () => {
     setSaving(true);
@@ -148,6 +169,8 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
         mutate(GLOBAL_SETTINGS_KEY);
         setAgentNotificationsEnabled(false);
         setMentionsPolicy(DEFAULT_MENTIONS_POLICY);
+        setEnabledRepos([]);
+        setRepoScopeMode("all");
         setDirty(false);
         toast.success("Settings reset to defaults.");
       } else {
@@ -168,6 +191,9 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
       mentionsPolicy,
     };
     const body: SlackGlobalConfig = { defaults };
+    if (repoScopeMode === "selected") {
+      body.enabledRepos = enabledRepos;
+    }
 
     try {
       const res = await fetch(GLOBAL_SETTINGS_KEY, {
@@ -216,6 +242,73 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
       </label>
 
       <div className="mb-4">
+        <p className="text-sm font-medium text-foreground mb-2">Repository Scope</p>
+        <p className="text-xs text-muted-foreground mb-2">
+          Allowlist of repositories where agents can post Slack notifications. Out-of-scope repos
+          are denied before per-repo overrides are evaluated.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-2 mb-3">
+          <RadioCard
+            name="slack-repo-scope"
+            checked={repoScopeMode === "all"}
+            onChange={() => {
+              setRepoScopeMode("all");
+              setDirty(true);
+            }}
+            label="All repositories"
+            description="Agents can post Slack notifications from any accessible repository."
+          />
+          <RadioCard
+            name="slack-repo-scope"
+            checked={repoScopeMode === "selected"}
+            onChange={() => {
+              setRepoScopeMode("selected");
+              setDirty(true);
+            }}
+            label="Selected repositories"
+            description="Agents can post Slack notifications only from the listed repositories."
+          />
+        </div>
+
+        {repoScopeMode === "selected" && (
+          <>
+            {availableRepos.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-4 py-3 border border-border rounded-sm">
+                Repository filtering is unavailable because no repositories are accessible.
+              </p>
+            ) : (
+              <div className="border border-border max-h-56 overflow-y-auto rounded-sm">
+                {availableRepos.map((repo) => {
+                  const fullName = repo.fullName.toLowerCase();
+                  const isChecked = enabledRepos.includes(fullName);
+
+                  return (
+                    <label
+                      key={repo.fullName}
+                      className="flex items-center gap-2 px-4 py-2 hover:bg-muted/50 transition cursor-pointer text-sm"
+                    >
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => toggleRepo(repo.fullName)}
+                      />
+                      <span className="text-foreground">{repo.fullName}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            {enabledRepos.length === 0 && availableRepos.length > 0 && (
+              <p className="text-xs text-warning mt-1">
+                No repositories selected. Agents will not be able to post Slack notifications from
+                any repo.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="mb-4">
         <p className="text-sm font-medium text-foreground mb-2">Mentions policy</p>
         <p className="text-xs text-muted-foreground mb-2">
           How direct user mentions (<code>{"<@U…>"}</code>) are handled in agent messages. Broadcast
@@ -256,8 +349,9 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
           <AlertDialogHeader>
             <AlertDialogTitle>Reset to defaults</AlertDialogTitle>
             <AlertDialogDescription>
-              Reset Slack defaults? The master switch will turn off and mentions policy will return
-              to <strong>allow</strong>. Per-repository overrides are not affected.
+              Reset Slack defaults? The master switch will turn off, mentions policy will return to{" "}
+              <strong>allow</strong>, and the repository allowlist will be cleared (all repos in
+              scope). Per-repository overrides are not affected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -31,6 +31,16 @@ export function isValidIntegrationId(id: string): id is IntegrationId {
   return VALID_INTEGRATION_IDS.has(id);
 }
 
+/**
+ * `enabledRepos` is the system-wide allowlist slot on every integration's
+ * global config. `null` (the resolved value when the setting is unset) means
+ * "all repos in scope"; any array — including `[]` — restricts scope to its
+ * lowercase contents.
+ */
+export function isRepoInScope(enabledRepos: string[] | null, repo: string): boolean {
+  return enabledRepos === null || enabledRepos.includes(repo.toLowerCase());
+}
+
 export class IntegrationSettingsStore {
   constructor(private readonly db: D1Database) {}
 

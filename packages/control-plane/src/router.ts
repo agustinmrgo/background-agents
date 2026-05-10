@@ -27,7 +27,7 @@ import {
   SourceControlProviderError,
   type SourceControlProviderName,
 } from "./source-control";
-import { IntegrationSettingsStore } from "./db/integration-settings";
+import { IntegrationSettingsStore, isRepoInScope } from "./db/integration-settings";
 import { SessionIndexStore } from "./db/session-index";
 import { UserScmTokenStore, DEFAULT_TOKEN_LIFETIME_MS } from "./db/user-scm-tokens";
 import { UserStore, type ProviderIdentity } from "./db/user-store";
@@ -91,8 +91,7 @@ async function resolveCodeServerEnabled(
     const { enabledRepos, settings } = await store.getResolvedConfig("code-server", repo);
     const csSettings = settings as CodeServerSettings;
     if (csSettings.enabled !== true) return false;
-    // enabledRepos: null → all repos, [] → none, [...] → allowlist
-    if (enabledRepos !== null && !enabledRepos.includes(repo)) return false;
+    if (!isRepoInScope(enabledRepos, repo)) return false;
     return true;
   } catch (e) {
     logger.warn("Failed to resolve code-server integration settings, defaulting to disabled", {
@@ -115,8 +114,7 @@ async function resolveSandboxSettings(
   try {
     const store = new IntegrationSettingsStore(db);
     const { enabledRepos, settings } = await store.getResolvedConfig("sandbox", repo);
-    // enabledRepos: null → all repos, [] → none, [...] → allowlist
-    if (enabledRepos !== null && !enabledRepos.includes(repo)) return {};
+    if (!isRepoInScope(enabledRepos, repo)) return {};
     return settings as SandboxSettings;
   } catch (e) {
     logger.warn("Failed to resolve sandbox settings, using defaults", {

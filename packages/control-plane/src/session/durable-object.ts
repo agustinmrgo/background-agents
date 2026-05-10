@@ -34,7 +34,11 @@ import {
 } from "../sandbox/lifecycle/manager";
 import { RepoImageStore } from "../db/repo-images";
 import { McpServerStore } from "../db/mcp-servers";
-import { IntegrationSettingsStore, resolveSlackSettings } from "../db/integration-settings";
+import {
+  IntegrationSettingsStore,
+  isRepoInScope,
+  resolveSlackSettings,
+} from "../db/integration-settings";
 import { SessionIndexStore } from "../db/session-index";
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from "../sandbox/lifecycle/decisions";
 import {
@@ -719,10 +723,9 @@ export class SessionDO extends DurableObject<Env> {
       slackAgentNotifyLookup = {
         isEnabledForRepo: async (repoOwner, repoName) => {
           if (!tokenPresent) return false;
-          const { settings } = await settingsStore.getResolvedConfig(
-            "slack",
-            `${repoOwner}/${repoName}`
-          );
+          const repo = `${repoOwner}/${repoName}`;
+          const { enabledRepos, settings } = await settingsStore.getResolvedConfig("slack", repo);
+          if (!isRepoInScope(enabledRepos, repo)) return false;
           return resolveSlackSettings(settings).agentNotificationsEnabled;
         },
       };
