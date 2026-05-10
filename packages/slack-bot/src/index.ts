@@ -6,6 +6,7 @@
  */
 
 import { Hono } from "hono";
+import { resolveAppName } from "@open-inspect/shared";
 import type {
   Env,
   RepoConfig,
@@ -25,7 +26,7 @@ import {
   getUserInfo,
   publishView,
   openView,
-} from "./utils/slack-client";
+} from "@open-inspect/shared";
 import { resolveUserNames } from "./utils/resolve-users";
 import { createClassifier } from "./classifier";
 import { getAvailableRepos } from "./classifier/repos";
@@ -64,6 +65,10 @@ import {
 const log = createLogger("handler");
 
 const MAX_REPO_SUGGESTION_OPTIONS = 100;
+
+export function buildAppHomeIntroText(appName: string): string {
+  return `Configure your ${appName} preferences below.`;
+}
 
 /**
  * Build authenticated headers for control plane requests.
@@ -491,7 +496,7 @@ async function publishAppHome(env: Env, userId: string): Promise<void> {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "Configure your Open-Inspect preferences below.",
+        text: buildAppHomeIntroText(resolveAppName(env)),
       },
     },
     { type: "divider" },
