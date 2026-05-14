@@ -131,8 +131,9 @@ Slack thread continue the existing session.
 
 When a session starts, Open-Inspect posts a working reply in the Slack thread. If Open-Inspect
 confidently chose a repository, it updates that working reply with a **View Session** button once
-the web session exists. If Open-Inspect first asked you to choose from a repository dropdown, it
-posts a separate session-started message with a **View progress** link instead.
+the web session exists. If Open-Inspect first asked you to choose from a repository dropdown, the
+working reply stays plain. In both paths, Open-Inspect also posts a separate session-started message
+with a **View progress** link.
 
 The web session is the best place to watch live output, inspect files, or take over.
 
