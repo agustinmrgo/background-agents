@@ -7,7 +7,8 @@ that workflow is enabled.
 This guide is for people using the Slack integration day to day. If you are installing the Slack app
 or deploying the worker, start with
 [Getting Started](../GETTING_STARTED.md#step-4-create-slack-app-optional) and
-[Complete Slack Setup](../GETTING_STARTED.md#step-7b-complete-slack-setup-if-using-slack).
+[Complete Slack Setup](../GETTING_STARTED.md#step-7b-complete-slack-setup-if-using-slack). Optional
+notification controls and safety notes are covered near the end.
 
 ---
 
@@ -101,6 +102,29 @@ posted.
 
 ---
 
+## What Gets Posted Back
+
+When a request is accepted, Open-Inspect posts a working reply in the Slack thread and then adds a
+link to the web session once it exists. For confident repository matches, the working reply may
+include a **View Session** button. Every session also gets a session-started reply with a **View
+progress** link.
+
+The web session is the best place to watch live output, inspect files, or take over.
+
+When the agent finishes, Slack receives a completion reply with:
+
+- The agent's final response, shortened if it is too long for Slack
+- Created artifacts such as pull requests or branches
+- A few key tool actions, such as edits or commands
+- The final status, model, repository, and reasoning effort when available
+- A **View Session** button
+
+If the agent created a manual-PR branch and no PR artifact is already present, Slack may also show a
+**Create PR** button. Screenshots and detailed event logs stay in the web session instead of being
+expanded into the Slack completion reply.
+
+---
+
 ## App Home Preferences
 
 Open the Open-Inspect app in Slack and go to the **Home** tab to set your personal defaults for new
@@ -127,34 +151,11 @@ Slack thread continue the existing session.
 
 ---
 
-## What Gets Posted Back
+## Optional Agent Notifications
 
-When a session starts, Open-Inspect posts a working reply in the Slack thread. If Open-Inspect
-confidently chose a repository, it updates that working reply with a **View Session** button once
-the web session exists. If Open-Inspect first asked you to choose from a repository dropdown, the
-working reply stays plain. In both paths, Open-Inspect also posts a separate session-started message
-with a **View progress** link.
-
-The web session is the best place to watch live output, inspect files, or take over.
-
-When the agent finishes, Slack receives a completion reply with:
-
-- The agent's final response, shortened if it is too long for Slack
-- Created artifacts such as pull requests or branches
-- A few key tool actions, such as edits or commands
-- The final status, model, repository, and reasoning effort when available
-- A **View Session** button
-
-If the agent created a manual-PR branch and no PR artifact is already present, Slack may also show a
-**Create PR** button. Screenshots and detailed event logs stay in the web session instead of being
-expanded into the Slack completion reply.
-
----
-
-## Agent Slack Notifications
-
-Agent Slack notifications are separate from starting a session in Slack. They let an agent post a
-message to a Slack channel when you explicitly ask for it:
+Slack-started sessions always get their normal thread replies and completion messages. Agent
+notifications are separate: they let an agent post an extra message to a Slack channel when you
+explicitly ask for it:
 
 ```text
 When you finish, post a short summary to #eng-updates.
@@ -168,14 +169,12 @@ To use this workflow:
 4. Optional: add repository overrides to inherit, force on, or force off agent notifications for
    specific repositories.
 
-Channel membership is the Slack-side access boundary. When the resolved setting is enabled and the
-sandbox has the tool, agents can attempt to post to user-named channels. Slack may still reject
-missing, archived, inaccessible, or rate-limited targets. Remove the bot from a channel to remove
-access.
+Channel membership controls where these extra posts can go. Invite the bot to a channel to make it
+available; remove it from a channel to remove access. Slack may still reject missing, archived,
+inaccessible, or rate-limited targets.
 
-Enabling agent notifications applies to newly spawned or restored sandboxes; already-running
-sandboxes do not gain the tool. Disabling the resolved setting blocks later notification attempts,
-including attempts from sessions that already have the tool.
+Changes apply to new sessions. If you turn notifications on and an existing session cannot post to
+Slack, start a new session. Turning notifications off blocks future notification attempts.
 
 ### Mentions
 
@@ -193,7 +192,9 @@ always stripped from agent notification messages.
 
 ---
 
-## Access and Safety
+## Admin and Safety Notes
+
+These notes are most useful for workspace admins deciding where the Slack bot should be available.
 
 - Slack bot tokens stay server-side. They are not sent to sandboxes.
 - Slack requests are verified before Open-Inspect acts on them.
