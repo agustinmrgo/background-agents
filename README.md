@@ -182,7 +182,7 @@ Interact with agents from wherever your team already works:
 - **Web UI** — Full session management with real-time streaming, model/reasoning selectors, terminal
   panel, and multiplayer presence
 - **Slack Bot** — @mention or DM to start a session; replies thread back with results. Per-user
-  model and branch preferences via App Home
+  model and branch preferences via App Home. See [Slack integration](docs/integrations/SLACK.md)
 - **GitHub Bot** — Auto-review on PR open, respond to @mentions in PR comments, or trigger on
   reviewer assignment. Configurable per-repo
 - **Linear Bot** — Assign an issue to the agent and it creates a coding session, posts progress
