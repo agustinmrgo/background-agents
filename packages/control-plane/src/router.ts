@@ -1308,7 +1308,8 @@ async function getSessionArtifactFromDo(
 function getMediaMimeType(
   artifact: Pick<ArtifactResponse, "metadata">
 ): "image/png" | "image/jpeg" | "image/webp" | "video/mp4" | null {
-  const mimeType = artifact.metadata?.mimeType;
+  const mimeType =
+    artifact.metadata && "mimeType" in artifact.metadata ? artifact.metadata.mimeType : undefined;
   if (typeof mimeType !== "string") return null;
   if (isSupportedScreenshotMimeType(mimeType) || isSupportedVideoMimeType(mimeType)) {
     return mimeType;

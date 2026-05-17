@@ -3,7 +3,6 @@
  */
 
 import type {
-  ArtifactType,
   EventType,
   MessageSource,
   MessageStatus,
@@ -12,6 +11,8 @@ import type {
 } from "@open-inspect/shared";
 
 export type {
+  ArtifactMetadata,
+  ArtifactResponse,
   ArtifactType,
   Attachment,
   ClientMessage,
@@ -23,6 +24,7 @@ export type {
   MessageStatus,
   ParticipantRole,
   ParticipantPresence,
+  PullRequestArtifactMetadata,
   SpawnSource,
   SandboxEvent,
   SandboxStatus,
@@ -153,14 +155,6 @@ export interface ListEventsResponse {
   events: EventResponse[];
   cursor?: string;
   hasMore: boolean;
-}
-
-export interface ArtifactResponse {
-  id: string;
-  type: ArtifactType;
-  url: string | null;
-  metadata: Record<string, unknown> | null;
-  createdAt: number;
 }
 
 export interface ParticipantResponse {

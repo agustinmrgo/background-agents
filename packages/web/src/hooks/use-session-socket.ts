@@ -5,13 +5,13 @@ import { mutate } from "swr";
 import { SIDEBAR_SESSIONS_KEY } from "@/lib/session-list";
 import type { Artifact, SandboxEvent } from "@/types/session";
 import type {
+  ArtifactMetadata,
   ParticipantPresence,
+  PullRequestArtifactMetadata,
   SandboxEvent as SharedSandboxEvent,
-  ScreenshotArtifactMetadata,
   ServerMessage,
   SessionArtifact,
   SessionState as SharedSessionState,
-  VideoArtifactMetadata,
 } from "@open-inspect/shared";
 
 // WebSocket URL (should come from env in production)
@@ -113,78 +113,31 @@ function toUiSandboxEvent(event: SharedSandboxEvent): SandboxEvent {
 }
 
 type PrState = NonNullable<NonNullable<Artifact["metadata"]>["prState"]>;
-const PR_STATES = new Set<string>(["open", "merged", "closed", "draft"]);
-type MediaMimeType = ScreenshotArtifactMetadata["mimeType"] | VideoArtifactMetadata["mimeType"];
-const MEDIA_MIME_TYPES = new Set<MediaMimeType>([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "video/mp4",
-]);
 
-function isMediaMimeType(value: string): value is MediaMimeType {
-  return MEDIA_MIME_TYPES.has(value as MediaMimeType);
-}
-
-function narrowDimensions(value: unknown): { width: number; height: number } | undefined {
-  if (
-    value &&
-    typeof value === "object" &&
-    typeof (value as { width?: unknown }).width === "number" &&
-    typeof (value as { height?: unknown }).height === "number"
-  ) {
-    return value as { width: number; height: number };
+function toUiArtifactMetadata(
+  artifactType: SessionArtifact["type"],
+  metadata: ArtifactMetadata
+): Artifact["metadata"] {
+  if (artifactType !== "pr") {
+    return metadata as Artifact["metadata"];
   }
-  return undefined;
+
+  const prMetadata = metadata as PullRequestArtifactMetadata;
+  return {
+    ...(metadata as Artifact["metadata"]),
+    prNumber: prMetadata.number,
+    prState: prMetadata.state as PrState | undefined,
+  };
 }
 
 function toUiArtifact(artifact: SessionArtifact): Artifact {
-  const meta = artifact.metadata as Record<string, unknown> | null;
   return {
     id: artifact.id,
-    type: artifact.type as Artifact["type"],
+    type: artifact.type,
     url: artifact.url,
     createdAt: artifact.createdAt,
-    metadata: meta
-      ? {
-          prNumber: typeof meta.number === "number" ? meta.number : undefined,
-          prState:
-            typeof meta.state === "string" && PR_STATES.has(meta.state)
-              ? (meta.state as PrState)
-              : undefined,
-          mode: meta.mode === "manual_pr" ? "manual_pr" : undefined,
-          createPrUrl: typeof meta.createPrUrl === "string" ? meta.createPrUrl : undefined,
-          head: typeof meta.head === "string" ? meta.head : undefined,
-          base: typeof meta.base === "string" ? meta.base : undefined,
-          provider: typeof meta.provider === "string" ? meta.provider : undefined,
-          filename: typeof meta.filename === "string" ? meta.filename : undefined,
-          objectKey: typeof meta.objectKey === "string" ? meta.objectKey : undefined,
-          mimeType:
-            typeof meta.mimeType === "string" && isMediaMimeType(meta.mimeType)
-              ? meta.mimeType
-              : undefined,
-          sizeBytes: typeof meta.sizeBytes === "number" ? meta.sizeBytes : undefined,
-          viewport: narrowDimensions(meta.viewport),
-          sourceUrl: typeof meta.sourceUrl === "string" ? meta.sourceUrl : undefined,
-          endUrl: typeof meta.endUrl === "string" ? meta.endUrl : undefined,
-          fullPage: typeof meta.fullPage === "boolean" ? meta.fullPage : undefined,
-          annotated: typeof meta.annotated === "boolean" ? meta.annotated : undefined,
-          caption: typeof meta.caption === "string" ? meta.caption : undefined,
-          durationMs: typeof meta.durationMs === "number" ? meta.durationMs : undefined,
-          recordingStartedAt:
-            typeof meta.recordingStartedAt === "number" ? meta.recordingStartedAt : undefined,
-          recordingEndedAt:
-            typeof meta.recordingEndedAt === "number" ? meta.recordingEndedAt : undefined,
-          dimensions: narrowDimensions(meta.dimensions),
-          truncated: typeof meta.truncated === "boolean" ? meta.truncated : undefined,
-          hasAudio: meta.hasAudio === false ? false : undefined,
-          previewStatus:
-            meta.previewStatus === "active" ||
-            meta.previewStatus === "outdated" ||
-            meta.previewStatus === "stopped"
-              ? meta.previewStatus
-              : undefined,
-        }
+    metadata: artifact.metadata
+      ? toUiArtifactMetadata(artifact.type, artifact.metadata)
       : undefined,
   };
 }

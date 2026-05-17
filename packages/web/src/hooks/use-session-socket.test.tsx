@@ -285,7 +285,7 @@ describe("useSessionSocket", () => {
     });
   });
 
-  it("drops wrong-type metadata fields during narrowing", async () => {
+  it("hydrates already-normalized partial screenshot metadata from subscribed artifacts", async () => {
     const { result } = renderHook(() => useSessionSocket("session-1"));
 
     await waitFor(() => {
@@ -307,8 +307,7 @@ describe("useSessionSocket", () => {
             metadata: {
               objectKey: "sessions/session-1/media/artifact-shot-wrong-types.png",
               mimeType: "image/png",
-              sizeBytes: "five",
-              viewport: "not-an-object",
+              caption: "Partial legacy screenshot",
             },
             createdAt: 1234,
           },
@@ -325,8 +324,7 @@ describe("useSessionSocket", () => {
           metadata: expect.objectContaining({
             objectKey: "sessions/session-1/media/artifact-shot-wrong-types.png",
             mimeType: "image/png",
-            sizeBytes: undefined,
-            viewport: undefined,
+            caption: "Partial legacy screenshot",
           }),
           createdAt: 1234,
         },

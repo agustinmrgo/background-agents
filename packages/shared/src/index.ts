@@ -3,6 +3,7 @@
  */
 
 export * from "./types";
+export * from "./artifacts";
 export * from "./git";
 export * from "./auth";
 export * from "./models";

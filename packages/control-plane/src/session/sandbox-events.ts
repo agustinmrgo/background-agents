@@ -1,4 +1,4 @@
-import type { SessionArtifact } from "@open-inspect/shared";
+import { normalizeArtifactMetadata, type SessionArtifact } from "@open-inspect/shared";
 import { generateId } from "../auth/crypto";
 import type { Logger } from "../logger";
 import type { GitPushSpec } from "../source-control";
@@ -65,6 +65,7 @@ export class SessionSandboxEventProcessor {
       this.deps.updateLastActivity(now);
 
       const artifactType = assertArtifactType(event.artifactType);
+      const metadata = normalizeArtifactMetadata(artifactType, event.metadata);
       const artifactId =
         typeof event.artifactId === "string" && event.artifactId.length > 0
           ? event.artifactId
@@ -73,13 +74,14 @@ export class SessionSandboxEventProcessor {
         ...event,
         artifactType,
         artifactId,
+        metadata: metadata ? (metadata as Record<string, unknown>) : undefined,
         messageId: messageId ?? undefined,
       };
       const artifact: SessionArtifact = {
         id: artifactId,
         type: artifactType,
         url: event.url,
-        metadata: event.metadata ?? null,
+        metadata,
         createdAt: now,
       };
 
@@ -87,7 +89,7 @@ export class SessionSandboxEventProcessor {
         id: artifact.id,
         type: artifact.type,
         url: artifact.url,
-        metadata: artifact.metadata ? JSON.stringify(artifact.metadata) : null,
+        metadata: metadata ? JSON.stringify(metadata) : null,
         createdAt: now,
       });
       this.deps.repository.createEvent({

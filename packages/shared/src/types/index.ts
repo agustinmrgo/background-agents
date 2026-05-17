@@ -115,19 +115,40 @@ export interface SessionArtifact {
   id: string;
   type: ArtifactType;
   url: string | null;
-  metadata: Record<string, unknown> | null;
+  metadata: ArtifactMetadata | null;
   createdAt: number;
+}
+
+export type PullRequestArtifactState = "open" | "closed" | "merged" | "draft";
+
+/**
+ * Metadata stored on pull request artifacts.
+ */
+export interface PullRequestArtifactMetadata {
+  number?: number;
+  state?: PullRequestArtifactState;
+  head?: string;
+  base?: string;
 }
 
 /**
  * Metadata stored on branch artifacts when PR creation falls back to manual flow.
  */
 export interface ManualPullRequestArtifactMetadata {
-  mode: "manual_pr";
-  head: string;
-  base: string;
-  createPrUrl: string;
+  mode?: "manual_pr";
+  head?: string;
+  base?: string;
+  createPrUrl?: string;
   provider?: string;
+}
+
+export type PreviewArtifactStatus = "active" | "outdated" | "stopped";
+
+/**
+ * Metadata stored on preview artifacts.
+ */
+export interface PreviewArtifactMetadata {
+  previewStatus?: PreviewArtifactStatus;
 }
 
 /** Metadata stored on screenshot artifacts. */
@@ -183,6 +204,16 @@ export interface VideoArtifactMetadata {
   /** URL when recording stopped */
   endUrl?: string;
 }
+
+export interface ArtifactMetadataByType {
+  pr: PullRequestArtifactMetadata;
+  screenshot: Partial<ScreenshotArtifactMetadata>;
+  video: Partial<VideoArtifactMetadata>;
+  preview: PreviewArtifactMetadata;
+  branch: ManualPullRequestArtifactMetadata;
+}
+
+export type ArtifactMetadata = ArtifactMetadataByType[ArtifactType];
 
 // Pull request info
 export interface PullRequest {
@@ -477,7 +508,7 @@ export interface ArtifactResponse {
   id: string;
   type: ArtifactType;
   url: string | null;
-  metadata: Record<string, unknown> | null;
+  metadata: ArtifactMetadata | null;
   createdAt: number;
 }
 
@@ -494,7 +525,7 @@ export interface ArtifactInfo {
   type: ArtifactType;
   url: string;
   label: string;
-  metadata?: Record<string, unknown> | null;
+  metadata?: ArtifactMetadata | null;
 }
 
 export interface AgentResponse {

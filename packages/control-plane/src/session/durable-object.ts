@@ -10,7 +10,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { initSchema } from "./schema";
 import { buildSessionInternalUrl, SessionInternalPaths } from "./contracts";
-import { resolveAppName, timingSafeEqual } from "@open-inspect/shared";
+import { normalizeArtifactMetadata, resolveAppName, timingSafeEqual } from "@open-inspect/shared";
 import { generateId, hashToken, encryptToken, decryptToken } from "../auth/crypto";
 import { getGitHubAppConfig, getCachedInstallationToken } from "../auth/github-app";
 import { createModalClient } from "../sandbox/client";
@@ -46,6 +46,7 @@ import {
 import { DEFAULT_MODEL, isValidReasoningEffort } from "../utils/models";
 import type {
   Env,
+  ArtifactMetadata,
   ClientInfo,
   ClientMessage,
   ServerMessage,
@@ -1788,14 +1789,14 @@ export class SessionDO extends DurableObject<Env> {
   // HTTP handlers
 
   private parseArtifactMetadata(
-    artifact: Pick<ArtifactRow, "id" | "metadata">
-  ): Record<string, unknown> | null {
+    artifact: Pick<ArtifactRow, "id" | "type" | "metadata">
+  ): ArtifactMetadata | null {
     if (!artifact.metadata) {
       return null;
     }
 
     try {
-      return JSON.parse(artifact.metadata) as Record<string, unknown>;
+      return normalizeArtifactMetadata(artifact.type, JSON.parse(artifact.metadata));
     } catch (error) {
       this.log.warn("Invalid artifact metadata JSON", {
         artifact_id: artifact.id,

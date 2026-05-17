@@ -1,5 +1,5 @@
 import type { ArtifactRow, EventRow, MessageRow } from "../types";
-import type { ArtifactResponse } from "../../types";
+import type { ArtifactMetadata, ArtifactResponse } from "../../types";
 import type { SessionRepository } from "../repository";
 import type { SessionMessageQueue } from "../message-queue";
 
@@ -42,8 +42,8 @@ interface MessageServiceDeps {
   messageQueue: SessionMessageQueue;
   stopExecution: () => Promise<void>;
   parseArtifactMetadata: (
-    artifact: Pick<ArtifactRow, "id" | "metadata">
-  ) => Record<string, unknown> | null;
+    artifact: Pick<ArtifactRow, "id" | "type" | "metadata">
+  ) => ArtifactMetadata | null;
 }
 
 export class MessageService {
@@ -84,7 +84,7 @@ export class MessageService {
       id: string;
       type: ArtifactRow["type"];
       url: string | null;
-      metadata: Record<string, unknown> | null;
+      metadata: ArtifactMetadata | null;
       createdAt: number;
     }>;
   } {

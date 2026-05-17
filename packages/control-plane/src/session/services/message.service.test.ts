@@ -92,12 +92,12 @@ describe("MessageService", () => {
         id: "a1",
         type: "pr",
         url: "https://example.com/pr/1",
-        metadata: '{"key":"value"}',
+        metadata: '{"number":1}',
         created_at: 1000,
       },
     ];
     vi.mocked(repository.listArtifacts).mockReturnValue(artifacts);
-    vi.mocked(parseArtifactMetadata).mockReturnValue({ key: "value" });
+    vi.mocked(parseArtifactMetadata).mockReturnValue({ number: 1 });
 
     const result = service.listArtifacts();
 
@@ -107,7 +107,7 @@ describe("MessageService", () => {
           id: "a1",
           type: "pr",
           url: "https://example.com/pr/1",
-          metadata: { key: "value" },
+          metadata: { number: 1 },
           createdAt: 1000,
         },
       ],

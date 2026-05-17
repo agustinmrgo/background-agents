@@ -1,5 +1,5 @@
 import type { Logger } from "../../../logger";
-import type { SessionArtifact } from "@open-inspect/shared";
+import { normalizeArtifactMetadata, type SessionArtifact } from "@open-inspect/shared";
 import type { ParticipantRole, SandboxEvent, ServerMessage } from "../../../types";
 import type { OpenAITokenRefreshResult } from "../../openai-token-refresh-service";
 import type { SessionRepository } from "../../repository";
@@ -35,7 +35,7 @@ interface CreateMediaArtifactRequest {
   artifactId: string;
   artifactType: string;
   objectKey: string;
-  metadata?: Record<string, unknown>;
+  metadata?: unknown;
 }
 
 export interface SandboxHandler {
@@ -71,13 +71,14 @@ export function createSandboxHandler(deps: SandboxHandlerDeps): SandboxHandler {
       }
 
       const artifactType = assertArtifactType(body.artifactType);
+      const metadata = normalizeArtifactMetadata(artifactType, body.metadata);
       const now = deps.now();
       const timestampSeconds = now / 1000;
       const artifact: SessionArtifact = {
         id: body.artifactId,
         type: artifactType,
         url: body.objectKey,
-        metadata: body.metadata ?? null,
+        metadata,
         createdAt: now,
       };
 
@@ -85,7 +86,7 @@ export function createSandboxHandler(deps: SandboxHandlerDeps): SandboxHandler {
         id: artifact.id,
         type: artifact.type,
         url: artifact.url,
-        metadata: artifact.metadata ? JSON.stringify(artifact.metadata) : null,
+        metadata: metadata ? JSON.stringify(metadata) : null,
         createdAt: now,
       });
 
@@ -94,7 +95,7 @@ export function createSandboxHandler(deps: SandboxHandlerDeps): SandboxHandler {
         artifactType: artifact.type,
         artifactId: artifact.id,
         url: body.objectKey,
-        metadata: artifact.metadata ?? undefined,
+        metadata: metadata ? (metadata as Record<string, unknown>) : undefined,
         messageId: processingMessage.id,
         sandboxId: sandbox.modal_sandbox_id ?? sandbox.id,
         timestamp: timestampSeconds,

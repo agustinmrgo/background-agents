@@ -14,6 +14,9 @@ import type {
   ToolCallSummary,
   ArtifactInfo,
   ArtifactType,
+  ArtifactMetadata,
+  ManualPullRequestArtifactMetadata,
+  PullRequestArtifactMetadata,
   Logger,
 } from "../types";
 import { buildInternalAuthHeaders } from "../auth";
@@ -268,14 +271,14 @@ export function getArtifactLabel(data: Record<string, unknown>): string {
  */
 export function getArtifactLabelFromArtifact(
   type: ArtifactType,
-  metadata: Record<string, unknown> | null
+  metadata: ArtifactMetadata | null
 ): string {
   if (type === "pr") {
-    const prNum = metadata?.number;
+    const prNum = (metadata as PullRequestArtifactMetadata | null)?.number;
     return prNum ? `PR #${prNum}` : "Pull Request";
   }
   if (type === "branch") {
-    const branchName = metadata?.head;
+    const branchName = (metadata as ManualPullRequestArtifactMetadata | null)?.head;
     return `Branch: ${branchName ?? "branch"}`;
   }
   return type;
