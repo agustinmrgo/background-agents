@@ -316,6 +316,65 @@ variable "daytona_target" {
   default     = ""
 }
 
+variable "vercel_sandbox_token" {
+  description = "Vercel API token for the Vercel Sandbox API"
+  type        = string
+  sensitive   = true
+  default     = ""
+
+  validation {
+    condition     = var.sandbox_provider != "vercel" || length(var.vercel_sandbox_token) > 0
+    error_message = "vercel_sandbox_token must be set when sandbox_provider = 'vercel'."
+  }
+}
+
+variable "vercel_sandbox_project_id" {
+  description = "Vercel project ID used to scope Sandbox API calls"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.sandbox_provider != "vercel" || length(var.vercel_sandbox_project_id) > 0
+    error_message = "vercel_sandbox_project_id must be set when sandbox_provider = 'vercel'."
+  }
+}
+
+variable "vercel_sandbox_team_id" {
+  description = "Optional Vercel team ID used to scope Sandbox API calls"
+  type        = string
+  default     = ""
+}
+
+variable "vercel_base_snapshot_id" {
+  description = "Optional Vercel Sandbox snapshot ID containing the Open-Inspect base runtime"
+  type        = string
+  default     = ""
+}
+
+variable "vercel_sandbox_runtime" {
+  description = "Vercel Sandbox runtime identifier"
+  type        = string
+  default     = "node24"
+}
+
+variable "vercel_runtime_repo_url" {
+  description = "Repository URL used to bootstrap sandbox-runtime when no Vercel base snapshot is configured"
+  type        = string
+  default     = "https://github.com/ColeMurray/background-agents.git"
+}
+
+variable "vercel_runtime_repo_ref" {
+  description = "Repository ref used to bootstrap sandbox-runtime when no Vercel base snapshot is configured"
+  type        = string
+  default     = "main"
+}
+
+variable "vercel_snapshot_expiration_ms" {
+  description = "Vercel Sandbox snapshot expiration in milliseconds; 0 means no expiration"
+  type        = number
+  default     = 0
+}
+
 variable "nextauth_secret" {
   description = "NextAuth.js secret (generate with: openssl rand -base64 32)"
   type        = string
@@ -327,13 +386,13 @@ variable "nextauth_secret" {
 # =============================================================================
 
 variable "sandbox_provider" {
-  description = "Sandbox backend for session execution: 'modal' or 'daytona'"
+  description = "Sandbox backend for session execution: 'modal', 'daytona', or 'vercel'"
   type        = string
   default     = "modal"
 
   validation {
-    condition     = contains(["modal", "daytona"], var.sandbox_provider)
-    error_message = "sandbox_provider must be 'modal' or 'daytona'."
+    condition     = contains(["modal", "daytona", "vercel"], var.sandbox_provider)
+    error_message = "sandbox_provider must be 'modal', 'daytona', or 'vercel'."
   }
 }
 

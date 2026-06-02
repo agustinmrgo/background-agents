@@ -14,7 +14,10 @@ import { GlobalSecretsStore } from "../db/global-secrets";
 import { RepoSecretsStore } from "../db/repo-secrets";
 import { mergeSecrets } from "../db/secrets-validation";
 import { createModalClient } from "../sandbox/client";
-import { isModalSandboxBackend } from "../sandbox/provider-name";
+import { createVercelSandboxClient } from "../sandbox/vercel-client";
+import { createVercelProvider } from "../sandbox/providers/vercel-provider";
+import { resolveSandboxBackendName, supportsRepoImageBackend } from "../sandbox/provider-name";
+import { resolveScmProviderFromEnv } from "../source-control";
 import { createLogger } from "../logger";
 import type { Env } from "../types";
 import {
@@ -31,12 +34,47 @@ import {
 
 const logger = createLogger("router:repo-images");
 
-function requireModalRepoImages(env: Env): Response | null {
-  if (isModalSandboxBackend(env.SANDBOX_PROVIDER)) {
+function requireRepoImages(env: Env): Response | null {
+  if (supportsRepoImageBackend(env.SANDBOX_PROVIDER)) {
     return null;
   }
 
-  return error("Repo images are only available when SANDBOX_PROVIDER=modal", 501);
+  return error("Repo images are only available when SANDBOX_PROVIDER=modal or vercel", 501);
+}
+
+function getRepoImageBackend(env: Env): "modal" | "vercel" {
+  const backend = resolveSandboxBackendName(env.SANDBOX_PROVIDER);
+  if (backend !== "modal" && backend !== "vercel") {
+    throw new Error(`Repo images are not supported for SANDBOX_PROVIDER=${backend}`);
+  }
+  return backend;
+}
+
+function createConfiguredVercelProvider(env: Env) {
+  if (!env.VERCEL_TOKEN || !env.VERCEL_PROJECT_ID) {
+    throw new Error("Vercel configuration not available");
+  }
+
+  const client = createVercelSandboxClient({
+    token: env.VERCEL_TOKEN,
+    projectId: env.VERCEL_PROJECT_ID,
+    teamId: env.VERCEL_TEAM_ID,
+    apiBaseUrl: env.VERCEL_SANDBOX_API_BASE_URL,
+  });
+
+  return createVercelProvider(client, {
+    scmProvider: resolveScmProviderFromEnv(env.SCM_PROVIDER),
+    token: env.VERCEL_TOKEN,
+    teamId: env.VERCEL_TEAM_ID,
+    apiBaseUrl: env.VERCEL_SANDBOX_API_BASE_URL,
+    baseSnapshotId: env.VERCEL_BASE_SNAPSHOT_ID,
+    runtime: env.VERCEL_RUNTIME,
+    runtimeRepoUrl: env.VERCEL_RUNTIME_REPO_URL,
+    runtimeRepoRef: env.VERCEL_RUNTIME_REPO_REF,
+    snapshotExpirationMs: parseInt(env.VERCEL_SNAPSHOT_EXPIRATION_MS || "0", 10),
+    codeServerPasswordSecret: env.VERCEL_TOKEN,
+    internalCallbackSecret: env.INTERNAL_CALLBACK_SECRET,
+  });
 }
 
 /**
@@ -49,7 +87,7 @@ async function handleBuildComplete(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -92,17 +130,23 @@ async function handleBuildComplete(
       trace_id: ctx.trace_id,
     });
 
-    // Fire-and-forget: delete the replaced provider image if one was replaced
-    if (result.replacedImageId && env.MODAL_API_SECRET && env.MODAL_WORKSPACE) {
+    // Fire-and-forget: delete the replaced provider image if one was replaced.
+    if (result.replacedImageId) {
       ctx.executionCtx?.waitUntil(
         (async () => {
           try {
-            const client = createModalClient(
-              env.MODAL_API_SECRET!,
-              env.MODAL_WORKSPACE!,
-              env.MODAL_ENVIRONMENT_WEB_SUFFIX
-            );
-            await client.deleteProviderImage({ providerImageId: result.replacedImageId! });
+            if (getRepoImageBackend(env) === "vercel") {
+              await createConfiguredVercelProvider(env).deleteProviderImage(
+                result.replacedImageId!
+              );
+            } else if (env.MODAL_API_SECRET && env.MODAL_WORKSPACE) {
+              const client = createModalClient(
+                env.MODAL_API_SECRET,
+                env.MODAL_WORKSPACE,
+                env.MODAL_ENVIRONMENT_WEB_SUFFIX
+              );
+              await client.deleteProviderImage({ providerImageId: result.replacedImageId! });
+            }
           } catch (e) {
             logger.warn("repo_image.delete_old_failed", {
               provider_image_id: result.replacedImageId,
@@ -135,7 +179,7 @@ async function handleBuildFailed(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -184,14 +228,11 @@ async function handleTriggerBuild(
   match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
     return error("Database not configured", 503);
-  }
-  if (!env.MODAL_API_SECRET || !env.MODAL_WORKSPACE) {
-    return error("Modal configuration not available", 503);
   }
   if (!env.WORKER_URL) {
     return error("WORKER_URL not configured", 503);
@@ -264,23 +305,51 @@ async function handleTriggerBuild(
       }
     }
 
-    // Trigger build on Modal
-    const client = createModalClient(
-      env.MODAL_API_SECRET,
-      env.MODAL_WORKSPACE,
-      env.MODAL_ENVIRONMENT_WEB_SUFFIX
-    );
-    await client.buildRepoImage(
-      {
+    const backend = getRepoImageBackend(env);
+    if (backend === "modal") {
+      if (!env.MODAL_API_SECRET || !env.MODAL_WORKSPACE) {
+        return error("Modal configuration not available", 503);
+      }
+      const client = createModalClient(
+        env.MODAL_API_SECRET,
+        env.MODAL_WORKSPACE,
+        env.MODAL_ENVIRONMENT_WEB_SUFFIX
+      );
+      await client.buildRepoImage(
+        {
+          repoOwner: owner,
+          repoName: name,
+          defaultBranch: "main",
+          buildId,
+          callbackUrl,
+          userEnvVars,
+        },
+        { trace_id: ctx.trace_id, request_id: ctx.request_id }
+      );
+    } else {
+      let cloneToken: string | undefined;
+      try {
+        const provider = createRouteSourceControlProvider(env);
+        const auth = await provider.generateCredentialHelperAuth();
+        cloneToken = auth.password;
+      } catch (e) {
+        logger.warn("repo_image.clone_token_failed", {
+          error: e instanceof Error ? e.message : String(e),
+          repo_owner: owner,
+          repo_name: name,
+        });
+      }
+      await createConfiguredVercelProvider(env).triggerRepoImageBuild({
         repoOwner: owner,
         repoName: name,
         defaultBranch: "main",
         buildId,
         callbackUrl,
         userEnvVars,
-      },
-      { trace_id: ctx.trace_id, request_id: ctx.request_id }
-    );
+        cloneToken,
+        correlation: { trace_id: ctx.trace_id, request_id: ctx.request_id },
+      });
+    }
 
     logger.info("repo_image.build_triggered", {
       build_id: buildId,
@@ -313,7 +382,7 @@ async function handleGetStatus(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -355,7 +424,7 @@ async function handleMarkStale(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -405,7 +474,7 @@ async function handleCleanup(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -455,7 +524,7 @@ async function handleToggleImageBuild(
   match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -509,7 +578,7 @@ async function handleGetEnabledRepos(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requireRepoImages(env);
   if (providerError) return providerError;
 
   if (!env.DB) {

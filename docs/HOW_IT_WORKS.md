@@ -148,10 +148,11 @@ Open-Inspect supports two backend patterns:
 
 - **Modal**: near-instant startup plus filesystem snapshot restore
 - **Daytona**: persistent stop/start sandboxes via direct REST API calls
+- **Vercel Sandboxes**: filesystem snapshot restore and repo-image builds via the Vercel Sandbox API
 
-Modal is still the only backend with repo-image builds and live filesystem snapshot restore. Daytona
-uses persistent sandboxes instead: the control plane stops the sandbox on inactivity or stale
-heartbeat, then resumes that same sandbox later with the same logical sandbox ID and auth token.
+Modal and Vercel support repo-image builds and live filesystem snapshot restore. Daytona uses
+persistent sandboxes instead: the control plane stops the sandbox on inactivity or stale heartbeat,
+then resumes that same sandbox later with the same logical sandbox ID and auth token.
 
 ### Clients
 
@@ -408,7 +409,7 @@ That's potentially minutes before the agent can start working.
 
 ### How Snapshots Solve This
 
-Modal's filesystem snapshots let us capture a sandbox's state after setup:
+Modal and Vercel filesystem snapshots let us capture a sandbox's state after setup:
 
 ```
 First session:  Clone ─▶ Install/Build ─▶ Start Runtime ─▶ [Snapshot] ─▶ Work

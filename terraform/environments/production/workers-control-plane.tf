@@ -81,6 +81,19 @@ module "control_plane_worker" {
     ] : [],
     local.use_daytona_backend && var.daytona_target != "" ? [
       { name = "DAYTONA_TARGET", value = var.daytona_target },
+    ] : [],
+    local.use_vercel_backend ? [
+      { name = "VERCEL_PROJECT_ID", value = var.vercel_sandbox_project_id },
+      { name = "VERCEL_RUNTIME", value = var.vercel_sandbox_runtime },
+      { name = "VERCEL_RUNTIME_REPO_URL", value = var.vercel_runtime_repo_url },
+      { name = "VERCEL_RUNTIME_REPO_REF", value = var.vercel_runtime_repo_ref },
+      { name = "VERCEL_SNAPSHOT_EXPIRATION_MS", value = tostring(var.vercel_snapshot_expiration_ms) },
+    ] : [],
+    local.use_vercel_backend && var.vercel_sandbox_team_id != "" ? [
+      { name = "VERCEL_TEAM_ID", value = var.vercel_sandbox_team_id },
+    ] : [],
+    local.use_vercel_backend && var.vercel_base_snapshot_id != "" ? [
+      { name = "VERCEL_BASE_SNAPSHOT_ID", value = var.vercel_base_snapshot_id },
     ] : []
   )
 
@@ -102,6 +115,9 @@ module "control_plane_worker" {
     ] : [],
     local.use_daytona_backend ? [
       { name = "DAYTONA_API_KEY", value = var.daytona_api_key },
+    ] : [],
+    local.use_vercel_backend ? [
+      { name = "VERCEL_TOKEN", value = var.vercel_sandbox_token },
     ] : [],
     # Slack bot token enables the agent-initiated `slack-notify` endpoint.
     # Shares the variable with the slack-bot worker; bound here so the same

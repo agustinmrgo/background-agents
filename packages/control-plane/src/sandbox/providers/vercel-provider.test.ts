@@ -1,0 +1,387 @@
+/**
+ * Unit tests for VercelSandboxProvider.
+ */
+
+import { describe, expect, it, vi } from "vitest";
+import { VercelSandboxProvider, type VercelProviderConfig } from "./vercel-provider";
+import { SandboxProviderError, type CreateSandboxConfig, type RestoreConfig } from "../provider";
+import type {
+  VercelCreateSandboxRequest,
+  VercelCreateSandboxResponse,
+  VercelRunCommandRequest,
+  VercelSandboxClient,
+  VercelSnapshotResponse,
+} from "../vercel-client";
+
+function createSessionResponse(
+  sessionId = "vercel-session-1",
+  routes: VercelCreateSandboxResponse["routes"] = [
+    { port: 8080, subdomain: "code", url: "https://code.test" },
+    { port: 7680, subdomain: "term", url: "https://term.test" },
+    { port: 3000, subdomain: "app", url: "app.test" },
+  ]
+): VercelCreateSandboxResponse {
+  return {
+    sandbox: {
+      name: "sandbox-456",
+      currentSessionId: sessionId,
+      createdAt: 123,
+      status: "running",
+    },
+    session: {
+      id: sessionId,
+      status: "running",
+      createdAt: 123,
+      cwd: "/workspace",
+      timeout: 7200000,
+    },
+    routes,
+  };
+}
+
+function createMockClient(
+  overrides: Partial<{
+    createSandbox: (request: VercelCreateSandboxRequest) => Promise<VercelCreateSandboxResponse>;
+    runCommandAndWait: (
+      request: VercelRunCommandRequest
+    ) => Promise<{ commandId: string; exitCode: number | null }>;
+    startCommand: (
+      request: VercelRunCommandRequest
+    ) => Promise<{ commandId: string; exitCode: number | null }>;
+    snapshotSession: (sessionId: string) => Promise<VercelSnapshotResponse>;
+    deleteSnapshot: (snapshotId: string) => Promise<void>;
+  }> = {}
+): VercelSandboxClient {
+  return {
+    createSandbox: vi.fn(async () => createSessionResponse()),
+    runCommandAndWait: vi.fn(async () => ({ commandId: "cmd-1", exitCode: 0 })),
+    startCommand: vi.fn(async () => ({ commandId: "cmd-2", exitCode: null })),
+    snapshotSession: vi.fn(
+      async (): Promise<VercelSnapshotResponse> => ({
+        snapshot: { id: "snapshot-1", status: "created", createdAt: 456 },
+        session: createSessionResponse().session,
+      })
+    ),
+    deleteSnapshot: vi.fn(async () => {}),
+    ...overrides,
+  } as unknown as VercelSandboxClient;
+}
+
+const providerConfig: VercelProviderConfig = {
+  scmProvider: "github",
+  codeServerPasswordSecret: "code-secret",
+  internalCallbackSecret: "callback-secret",
+  token: "vercel-token",
+  teamId: "team-123",
+  apiBaseUrl: "https://vercel.test/api",
+  baseSnapshotId: "base-snapshot-1",
+};
+
+const baseCreateConfig: CreateSandboxConfig = {
+  sessionId: "session-123",
+  sandboxId: "sandbox-456",
+  repoOwner: "testowner",
+  repoName: "testrepo",
+  controlPlaneUrl: "https://control-plane.test",
+  sandboxAuthToken: "auth-token",
+  provider: "anthropic",
+  model: "anthropic/claude-sonnet-4-5",
+};
+
+const baseRestoreConfig: RestoreConfig = {
+  snapshotImageId: "snapshot-restore-1",
+  sessionId: "session-123",
+  sandboxId: "sandbox-456",
+  repoOwner: "testowner",
+  repoName: "testrepo",
+  controlPlaneUrl: "https://control-plane.test",
+  sandboxAuthToken: "auth-token",
+  provider: "anthropic",
+  model: "anthropic/claude-sonnet-4-5",
+};
+
+describe("VercelSandboxProvider", () => {
+  it("reports Vercel capabilities", () => {
+    const provider = new VercelSandboxProvider(createMockClient(), providerConfig);
+
+    expect(provider.name).toBe("vercel");
+    expect(provider.capabilities).toEqual({
+      supportsSnapshots: true,
+      supportsRestore: true,
+      supportsWarm: true,
+      supportsPersistentResume: false,
+      supportsExplicitStop: false,
+    });
+  });
+
+  it("creates a sandbox from the configured base snapshot and launches the entrypoint", async () => {
+    const client = createMockClient();
+    const provider = new VercelSandboxProvider(client, providerConfig);
+
+    const result = await provider.createSandbox({
+      ...baseCreateConfig,
+      branch: "feature/vercel",
+      codeServerEnabled: true,
+      sandboxSettings: { terminalEnabled: true },
+      userEnvVars: { USER_SECRET: "value", SANDBOX_ID: "user-override" },
+      mcpServers: [{ id: "mcp-1", name: "Tool", type: "local", enabled: true }],
+      agentSlackNotifyEnabled: true,
+    });
+
+    const createCall = vi.mocked(client.createSandbox).mock.calls[0][0];
+    expect(createCall).toEqual(
+      expect.objectContaining({
+        name: "sandbox-456",
+        runtime: "node24",
+        sourceSnapshotId: "base-snapshot-1",
+        ports: [8080, 7680],
+        tags: {
+          openinspect_framework: "open-inspect",
+          openinspect_session_id: "session-123",
+          openinspect_repo: "testowner/testrepo",
+          openinspect_expected_sandbox_id: "sandbox-456",
+        },
+      })
+    );
+    expect(createCall.env).toEqual(
+      expect.objectContaining({
+        USER_SECRET: "value",
+        SANDBOX_ID: "sandbox-456",
+        CONTROL_PLANE_URL: "https://control-plane.test",
+        SANDBOX_AUTH_TOKEN: "auth-token",
+        REPO_OWNER: "testowner",
+        REPO_NAME: "testrepo",
+        VCS_HOST: "github.com",
+        VCS_CLONE_USERNAME: "x-access-token",
+        CODE_SERVER_PASSWORD: expect.any(String),
+        TERMINAL_ENABLED: "true",
+        AGENT_SLACK_NOTIFY_ENABLED: "true",
+      })
+    );
+    expect(JSON.parse(createCall.env?.SESSION_CONFIG as string)).toEqual({
+      session_id: "session-123",
+      repo_owner: "testowner",
+      repo_name: "testrepo",
+      provider: "anthropic",
+      model: "anthropic/claude-sonnet-4-5",
+      mcp_servers: [{ id: "mcp-1", name: "Tool", type: "local", enabled: true }],
+      branch: "feature/vercel",
+    });
+    expect(vi.mocked(client.runCommandAndWait)).not.toHaveBeenCalled();
+    expect(vi.mocked(client.startCommand)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "vercel-session-1",
+        command: "sudo",
+        args: ["-E", "python3", "-m", "sandbox_runtime.entrypoint"],
+        cwd: "/workspace",
+      }),
+      undefined
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        sandboxId: "sandbox-456",
+        providerObjectId: "vercel-session-1",
+        status: "warming",
+        createdAt: 123,
+        codeServerUrl: "https://code.test",
+        codeServerPassword: expect.any(String),
+        ttydUrl: "https://term.test",
+      })
+    );
+  });
+
+  it("uses a repo image snapshot and writes tunnel URLs for extra exposed ports", async () => {
+    const client = createMockClient();
+    const provider = new VercelSandboxProvider(client, providerConfig);
+
+    const result = await provider.createSandbox({
+      ...baseCreateConfig,
+      repoImageId: "repo-snapshot-1",
+      repoImageSha: "abc123",
+      codeServerEnabled: true,
+      sandboxSettings: { terminalEnabled: true, tunnelPorts: [8080, 3000, 5173] },
+    });
+
+    const createCall = vi.mocked(client.createSandbox).mock.calls[0][0];
+    expect(createCall.sourceSnapshotId).toBe("repo-snapshot-1");
+    expect(createCall.ports).toEqual([8080, 7680, 3000, 5173]);
+    expect(createCall.env).toEqual(
+      expect.objectContaining({
+        FROM_REPO_IMAGE: "true",
+        REPO_IMAGE_SHA: "abc123",
+        EXPECTED_TUNNEL_PORTS: "3000,5173",
+      })
+    );
+    expect(vi.mocked(client.runCommandAndWait)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "vercel-session-1",
+        command: "sudo",
+        args: expect.arrayContaining(["python3", "-c", expect.stringContaining("TUNNEL_3000")]),
+      }),
+      undefined
+    );
+    expect(result.tunnelUrls).toEqual({
+      "3000": "https://app.test",
+    });
+  });
+
+  it("bootstraps the runtime when no source snapshot is available", async () => {
+    const client = createMockClient();
+    const provider = new VercelSandboxProvider(client, {
+      ...providerConfig,
+      baseSnapshotId: undefined,
+      runtimeRepoUrl: "https://github.com/example/runtime.git",
+      runtimeRepoRef: "release",
+    });
+
+    await provider.createSandbox(baseCreateConfig);
+
+    expect(vi.mocked(client.runCommandAndWait)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "vercel-session-1",
+        command: "bash",
+        args: ["-lc", expect.stringContaining("RUNTIME_REPO_REF='release'")],
+      }),
+      undefined
+    );
+  });
+
+  it("restores from a session snapshot and sets restore mode env vars", async () => {
+    const client = createMockClient();
+    const provider = new VercelSandboxProvider(client, providerConfig);
+
+    const result = await provider.restoreFromSnapshot({
+      ...baseRestoreConfig,
+      codeServerEnabled: true,
+    });
+
+    const createCall = vi.mocked(client.createSandbox).mock.calls[0][0];
+    expect(createCall.sourceSnapshotId).toBe("snapshot-restore-1");
+    expect(createCall.env).toEqual(expect.objectContaining({ RESTORED_FROM_SNAPSHOT: "true" }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        success: true,
+        sandboxId: "sandbox-456",
+        providerObjectId: "vercel-session-1",
+        codeServerUrl: "https://code.test",
+      })
+    );
+  });
+
+  it("takes and deletes Vercel snapshots", async () => {
+    const client = createMockClient();
+    const provider = new VercelSandboxProvider(client, {
+      ...providerConfig,
+      snapshotExpirationMs: 60_000,
+    });
+
+    const snapshot = await provider.takeSnapshot({
+      providerObjectId: "vercel-session-1",
+      sessionId: "session-123",
+      reason: "inactivity_timeout",
+    });
+    await provider.deleteProviderImage("snapshot-1");
+
+    expect(vi.mocked(client.snapshotSession)).toHaveBeenCalledWith(
+      "vercel-session-1",
+      { expirationMs: 60_000 },
+      undefined
+    );
+    expect(snapshot).toEqual({ success: true, imageId: "snapshot-1" });
+    expect(vi.mocked(client.deleteSnapshot)).toHaveBeenCalledWith("snapshot-1");
+  });
+
+  it("reports a failed snapshot status without throwing", async () => {
+    const client = createMockClient({
+      snapshotSession: vi.fn(
+        async (): Promise<VercelSnapshotResponse> => ({
+          snapshot: { id: "snapshot-1", status: "failed", createdAt: 456 },
+          session: createSessionResponse().session,
+        })
+      ),
+    });
+    const provider = new VercelSandboxProvider(client, providerConfig);
+
+    const result = await provider.takeSnapshot({
+      providerObjectId: "vercel-session-1",
+      sessionId: "session-123",
+      reason: "execution_complete",
+    });
+
+    expect(result).toEqual({ success: false, error: "Snapshot status was failed" });
+  });
+
+  it("triggers a repo image build sandbox and launches the build coordinator", async () => {
+    const client = createMockClient();
+    const provider = new VercelSandboxProvider(client, providerConfig);
+
+    const result = await provider.triggerRepoImageBuild({
+      buildId: "build-123",
+      repoOwner: "testowner",
+      repoName: "testrepo",
+      defaultBranch: "main",
+      callbackUrl: "https://control-plane.test/repo-images/build-complete",
+      userEnvVars: { USER_SECRET: "value" },
+      cloneToken: "clone-token",
+    });
+
+    const createCall = vi.mocked(client.createSandbox).mock.calls[0][0];
+    expect(createCall).toEqual(
+      expect.objectContaining({
+        runtime: "node24",
+        timeoutMs: 1800 * 1000,
+        sourceSnapshotId: "base-snapshot-1",
+        tags: {
+          openinspect_framework: "open-inspect",
+          openinspect_kind: "repo-image-build",
+          openinspect_build_id: "build-123",
+          openinspect_repo: "testowner/testrepo",
+        },
+      })
+    );
+    expect(createCall.env).toEqual(
+      expect.objectContaining({
+        USER_SECRET: "value",
+        IMAGE_BUILD_MODE: "true",
+        SESSION_CONFIG: JSON.stringify({ branch: "main" }),
+        OI_VERCEL_BUILD_ID: "build-123",
+        OI_VERCEL_CALLBACK_URL: "https://control-plane.test/repo-images/build-complete",
+        OI_INTERNAL_CALLBACK_SECRET: "callback-secret",
+        OI_VERCEL_TOKEN: "vercel-token",
+        OI_VERCEL_TEAM_ID: "team-123",
+        OI_VERCEL_API_BASE_URL: "https://vercel.test/api",
+        VCS_CLONE_TOKEN: "clone-token",
+        GITHUB_TOKEN: "clone-token",
+        GITHUB_APP_TOKEN: "clone-token",
+        OI_GITHUB_TOKEN_IS_FALLBACK: "1",
+      })
+    );
+    expect(vi.mocked(client.startCommand)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "vercel-session-1",
+        command: "python3",
+        args: ["-c", expect.stringContaining("def snapshot_session")],
+        cwd: "/workspace",
+        env: { OI_VERCEL_SESSION_ID: "vercel-session-1" },
+      })
+    );
+    expect(result).toEqual({ buildId: "build-123", status: "building" });
+  });
+
+  it("requires an internal callback secret for repo image builds", async () => {
+    const provider = new VercelSandboxProvider(createMockClient(), {
+      ...providerConfig,
+      internalCallbackSecret: undefined,
+    });
+
+    await expect(
+      provider.triggerRepoImageBuild({
+        buildId: "build-123",
+        repoOwner: "testowner",
+        repoName: "testrepo",
+        defaultBranch: "main",
+        callbackUrl: "https://control-plane.test/repo-images/build-complete",
+      })
+    ).rejects.toThrow(SandboxProviderError);
+  });
+});

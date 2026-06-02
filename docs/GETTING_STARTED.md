@@ -15,11 +15,11 @@ This guide walks you through deploying your own instance of Open-Inspect using T
 
 Open-Inspect uses Terraform to automate deployment across three cloud providers:
 
-| Provider                               | Purpose                          | What Terraform Creates                                            |
-| -------------------------------------- | -------------------------------- | ----------------------------------------------------------------- |
-| **Cloudflare**                         | Control plane, session state     | Workers, KV namespaces, Durable Objects, D1 Database              |
-| **Vercel** _or_ **Cloudflare Workers** | Web application                  | Project + env vars (Vercel) _or_ Worker via OpenNext (Cloudflare) |
-| **Modal** _or_ **Daytona**             | Sandbox execution infrastructure | Modal app deployment _or_ control-plane config for Daytona API    |
+| Provider                                          | Purpose                          | What Terraform Creates                                                   |
+| ------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------ |
+| **Cloudflare**                                    | Control plane, session state     | Workers, KV namespaces, Durable Objects, D1 Database                     |
+| **Vercel** _or_ **Cloudflare Workers**            | Web application                  | Project + env vars (Vercel) _or_ Worker via OpenNext (Cloudflare)        |
+| **Modal**, **Daytona**, _or_ **Vercel Sandboxes** | Sandbox execution infrastructure | Modal app deployment, Daytona API config, _or_ Vercel Sandbox API config |
 
 > **Web platform choice**: Set `web_platform` in your `terraform.tfvars` to `"vercel"` (default) or
 > `"cloudflare"`. The Cloudflare option deploys the Next.js app as a Cloudflare Worker using
@@ -36,16 +36,17 @@ Open-Inspect uses Terraform to automate deployment across three cloud providers:
 
 Create accounts on these services before continuing:
 
-| Service                                          | Purpose                                                        |
-| ------------------------------------------------ | -------------------------------------------------------------- |
-| [Cloudflare](https://dash.cloudflare.com)        | Control plane hosting (+ web app if using Cloudflare platform) |
-| [Vercel](https://vercel.com) _(optional)_        | Web application hosting (only if `web_platform = "vercel"`)    |
-| [Modal](https://modal.com) _(optional)_          | Sandbox infrastructure when `sandbox_provider = "modal"`       |
-| [Daytona](https://app.daytona.io) _(optional)_   | Sandbox infrastructure when `sandbox_provider = "daytona"`     |
-| [GitHub](https://github.com/settings/developers) | OAuth + repository access                                      |
-| [Anthropic](https://console.anthropic.com)       | Claude API                                                     |
-| [Slack](https://api.slack.com/apps) _(optional)_ | Slack bot integration                                          |
-| GitHub App Webhooks _(optional)_                 | GitHub bot (PR reviews)                                        |
+| Service                                             | Purpose                                                        |
+| --------------------------------------------------- | -------------------------------------------------------------- |
+| [Cloudflare](https://dash.cloudflare.com)           | Control plane hosting (+ web app if using Cloudflare platform) |
+| [Vercel](https://vercel.com) _(optional)_           | Web application hosting (only if `web_platform = "vercel"`)    |
+| [Modal](https://modal.com) _(optional)_             | Sandbox infrastructure when `sandbox_provider = "modal"`       |
+| [Daytona](https://app.daytona.io) _(optional)_      | Sandbox infrastructure when `sandbox_provider = "daytona"`     |
+| [Vercel Sandboxes](https://vercel.com) _(optional)_ | Sandbox infrastructure when `sandbox_provider = "vercel"`      |
+| [GitHub](https://github.com/settings/developers)    | OAuth + repository access                                      |
+| [Anthropic](https://console.anthropic.com)          | Claude API                                                     |
+| [Slack](https://api.slack.com/apps) _(optional)_    | Slack bot integration                                          |
+| GitHub App Webhooks _(optional)_                    | GitHub bot (PR reviews)                                        |
 
 ### Required Tools
 
@@ -180,6 +181,24 @@ The control plane calls the Daytona REST API directly — no shim service to dep
 > **Important**: Unlike Modal, the Daytona provider does not automatically inject LLM API keys into
 > sandboxes. If you plan to use Claude models, add `ANTHROPIC_API_KEY` as a **global secret** in
 > Settings > Secrets after deploying. See [Secrets Management](SECRETS.md) for details.
+
+### Vercel Sandboxes
+
+> Only required when `sandbox_provider = "vercel"`.
+
+1. Create a [Vercel API token](https://vercel.com/account/tokens) that can access your sandbox
+   project.
+2. Note the **Project ID** for the project that will own sandbox sessions.
+3. Note the **Team/Account ID** if you use a Vercel team. Leave it unset for personal accounts where
+   the token can access the project directly.
+4. Set `sandbox_provider = "vercel"` in `terraform.tfvars`.
+5. Set `vercel_sandbox_token`, `vercel_sandbox_project_id`, and optionally `vercel_sandbox_team_id`
+   in `terraform.tfvars`.
+
+The control plane calls the Vercel Sandbox API directly from Cloudflare Workers. No Modal-style shim
+service is deployed. Vercel supports filesystem snapshots and repo prebuilt images; if you have a
+reusable base snapshot, set `vercel_base_snapshot_id` to skip runtime bootstrapping on every fresh
+sandbox.
 
 ### Anthropic
 
@@ -362,10 +381,19 @@ modal_workspace             = "your-modal-workspace"
 modal_environment           = "your-modal-environment"
 modal_environment_web_suffix = "your-modal-web-suffix" # Lowercase letters, digits, dashes; empty for https://workspace--... endpoints
 
+# Sandbox provider: "modal" (default), "daytona", or "vercel"
+# sandbox_provider          = "modal"
+
 # Daytona (only required when sandbox_provider = "daytona")
 # daytona_api_url           = "https://app.daytona.io/api"
 # daytona_api_key           = "your-daytona-api-key"
 # daytona_base_snapshot     = "your-snapshot-name"
+
+# Vercel Sandboxes (only required when sandbox_provider = "vercel")
+# vercel_sandbox_token      = "your-vercel-token"
+# vercel_sandbox_project_id = "prj_xxxxx"
+# vercel_sandbox_team_id    = "team_xxxxx" # Optional
+# vercel_base_snapshot_id   = "snapshot_xxxxx" # Optional but recommended for faster starts
 
 # GitHub App (used for both OAuth and repository access)
 github_client_id     = "Iv1.abc123..."           # From GitHub App settings
@@ -680,6 +708,11 @@ Go to your fork's Settings → Secrets and variables → Actions, and add:
 | `MODAL_WORKSPACE`              | Modal workspace name                                                                        |
 | `MODAL_ENVIRONMENT`            | Modal environment name (defaults to `main`)                                                 |
 | `MODAL_ENVIRONMENT_WEB_SUFFIX` | Modal environment web suffix for endpoint URLs; lowercase letters, digits, dashes, or empty |
+| `SANDBOX_PROVIDER`             | `modal`, `daytona`, or `vercel`                                                             |
+| `VERCEL_SANDBOX_TOKEN`         | Vercel API token _(only if `sandbox_provider = "vercel"`)_                                  |
+| `VERCEL_SANDBOX_PROJECT_ID`    | Vercel project ID for sandbox sessions _(only if `sandbox_provider = "vercel"`)_            |
+| `VERCEL_SANDBOX_TEAM_ID`       | Optional Vercel team/account ID for sandbox sessions                                        |
+| `VERCEL_BASE_SNAPSHOT_ID`      | Optional Vercel snapshot used as the base sandbox runtime                                   |
 | `GH_OAUTH_CLIENT_ID`           | GitHub App OAuth client ID                                                                  |
 | `GH_OAUTH_CLIENT_SECRET`       | GitHub App OAuth client secret                                                              |
 | `GH_APP_ID`                    | GitHub App ID                                                                               |

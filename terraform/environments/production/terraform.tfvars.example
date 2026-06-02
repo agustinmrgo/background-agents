@@ -72,6 +72,18 @@ daytona_api_key = ""           # Requires Sandboxes (Read/Write) + Snapshots (Re
 daytona_base_snapshot = ""     # Name of the seeded Daytona snapshot
 # daytona_target = ""          # Optional Daytona target name
 
+# Vercel Sandbox API
+# Only required when sandbox_provider = "vercel"
+# Create a Vercel access token and use a project ID with Sandbox access.
+vercel_sandbox_token      = ""
+vercel_sandbox_project_id = "" # e.g., "prj_xxxxxxxxxxxxxxxxxxxx"
+# vercel_sandbox_team_id  = "" # Optional team ID, e.g., "team_xxxxxxxxxxxxxxxxxxxx"
+# vercel_base_snapshot_id = "" # Optional base runtime snapshot; omitting it bootstraps at sandbox start
+# vercel_sandbox_runtime  = "node24"
+# vercel_runtime_repo_url = "https://github.com/ColeMurray/background-agents.git"
+# vercel_runtime_repo_ref = "main"
+# vercel_snapshot_expiration_ms = 0
+
 # =============================================================================
 # GitHub App Credentials
 # =============================================================================
@@ -189,6 +201,7 @@ nextauth_secret = ""
 # Sandbox backend for session execution
 # - "modal": existing Modal-based sandboxes with filesystem snapshot restore
 # - "daytona": direct Daytona REST API integration with stop/start resume
+# - "vercel": Vercel Sandbox API with filesystem snapshot restore
 sandbox_provider = "modal"
 
 # Platform for the web app deployment

@@ -10,7 +10,7 @@ The infrastructure spans three cloud providers:
 | Provider       | Resources                                            | Terraform Support                |
 | -------------- | ---------------------------------------------------- | -------------------------------- |
 | **Cloudflare** | Workers, KV Namespaces, Durable Objects, D1 Database | Native provider                  |
-| **Vercel**     | Next.js Web App                                      | Native provider                  |
+| **Vercel**     | Next.js Web App, optional sandbox sessions           | Native provider                  |
 | **Modal**      | Sandbox Infrastructure                               | CLI wrapper (no provider exists) |
 
 ## Directory Structure
@@ -80,6 +80,8 @@ brew install node@22
 
 1. **Create API Token** at [Vercel Account Settings](https://vercel.com/account/tokens)
 2. **Note your Team ID** (found in team settings URL)
+3. If using `sandbox_provider = "vercel"`, also note the Project ID for the Vercel project that will
+   own sandbox sessions.
 
 ### 4. Modal Setup
 
@@ -180,6 +182,13 @@ MODAL_TOKEN_SECRET
 MODAL_WORKSPACE
 MODAL_ENVIRONMENT # Optional; defaults to main
 MODAL_ENVIRONMENT_WEB_SUFFIX # Optional; lowercase letters, digits, dashes; empty for workspace--... endpoints
+
+# Vercel Sandboxes (only if SANDBOX_PROVIDER=vercel)
+SANDBOX_PROVIDER
+VERCEL_SANDBOX_TOKEN
+VERCEL_SANDBOX_PROJECT_ID
+VERCEL_SANDBOX_TEAM_ID # Optional
+VERCEL_BASE_SNAPSHOT_ID # Optional
 
 # GitHub OAuth App
 GH_OAUTH_CLIENT_ID
