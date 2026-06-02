@@ -31,6 +31,7 @@ const CODE_SERVER_PORT = 8080;
 const TTYD_PROXY_PORT = 7680;
 const TUNNEL_ENV_FILE_PATH = "/workspace/.tunnels.env";
 const EXPECTED_TUNNEL_PORTS_ENV_VAR = "EXPECTED_TUNNEL_PORTS";
+const VERCEL_PYTHON_BIN = "/usr/bin/python3.12";
 const DEFAULT_RUNTIME = "node24";
 const DEFAULT_RUNTIME_REPO_URL = "https://github.com/ColeMurray/background-agents.git";
 const DEFAULT_RUNTIME_REPO_REF = "main";
@@ -459,7 +460,7 @@ export class VercelSandboxProvider implements SandboxProvider {
       {
         sessionId,
         command: "sudo",
-        args: ["-E", "python3", "-c", script],
+        args: ["-E", VERCEL_PYTHON_BIN, "-c", script],
         timeoutMs: 30_000,
       },
       correlation
@@ -497,7 +498,7 @@ export class VercelSandboxProvider implements SandboxProvider {
       {
         sessionId,
         command: "sudo",
-        args: ["-E", "python3", "-m", "sandbox_runtime.entrypoint"],
+        args: ["-E", VERCEL_PYTHON_BIN, "-m", "sandbox_runtime.entrypoint"],
         cwd: "/workspace",
         env,
       },
@@ -511,7 +512,7 @@ export class VercelSandboxProvider implements SandboxProvider {
   ): Promise<void> {
     await this.client.startCommand({
       sessionId,
-      command: "python3",
+      command: VERCEL_PYTHON_BIN,
       args: ["-c", buildCoordinatorScript()],
       cwd: "/workspace",
       env,
@@ -597,14 +598,19 @@ TTYD_SHA256="8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55"
 
 sudo mkdir -p /workspace /app /app/plugins /app/opencode-deps /tmp/opencode /root
 
-sudo dnf install -y dnf-plugins-core git curl gcc gcc-c++ make ca-certificates gnupg2 openssh-clients jq unzip tar gzip python3-pip ffmpeg libX11 libXcomposite libXdamage libXext libXfixes libXrandr libxcb libxkbcommon libdrm mesa-libgbm alsa-lib atk at-spi2-atk cups-libs pango cairo nspr nss || true
+sudo dnf install -y dnf-plugins-core git gcc gcc-c++ make ca-certificates openssh-clients jq unzip tar gzip python3.12 python3.12-pip python3.12-devel
+sudo dnf install -y libX11 libXcomposite libXdamage libXext libXfixes libXrandr libxcb libxkbcommon libdrm mesa-libgbm alsa-lib atk at-spi2-atk cups-libs pango cairo nspr nss || true
+sudo dnf install -y ffmpeg || true
 if ! command -v gh >/dev/null 2>&1; then
   sudo dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo || true
   sudo dnf install -y gh || true
 fi
 
-sudo python3 -m pip install --upgrade pip --break-system-packages || sudo python3 -m pip install --upgrade pip
-sudo python3 -m pip install --break-system-packages uv httpx websockets 'pydantic>=2.0' 'PyJWT[crypto]' || sudo python3 -m pip install uv httpx websockets 'pydantic>=2.0' 'PyJWT[crypto]'
+sudo ln -sf ${VERCEL_PYTHON_BIN} /usr/local/bin/python3
+if ! ${VERCEL_PYTHON_BIN} -m pip --version >/dev/null 2>&1; then
+  sudo ${VERCEL_PYTHON_BIN} -m ensurepip --upgrade
+fi
+sudo ${VERCEL_PYTHON_BIN} -m pip install --break-system-packages uv httpx websockets 'pydantic>=2.0' 'PyJWT[crypto]' || sudo ${VERCEL_PYTHON_BIN} -m pip install uv httpx websockets 'pydantic>=2.0' 'PyJWT[crypto]'
 
 sudo npm install -g pnpm@latest opencode-ai@"$OPENCODE_VERSION" @opencode-ai/plugin@"$OPENCODE_VERSION" zod agent-browser@"$AGENT_BROWSER_VERSION"
 if [ ! -x /root/.bun/bin/bun ]; then
@@ -631,9 +637,9 @@ git checkout --detach FETCH_HEAD 2>/dev/null || git checkout "$RUNTIME_REPO_REF"
 sudo rm -rf /app/sandbox_runtime
 sudo cp -a packages/sandbox-runtime/src/sandbox_runtime /app/sandbox_runtime
 sudo chmod -R a+rX /app/sandbox_runtime
-sudo python3 -m pip install --break-system-packages -e packages/sandbox-runtime || sudo python3 -m pip install -e packages/sandbox-runtime
+sudo ${VERCEL_PYTHON_BIN} -m pip install --break-system-packages -e packages/sandbox-runtime || sudo ${VERCEL_PYTHON_BIN} -m pip install -e packages/sandbox-runtime
 
-printf '%s\\n' '#!/bin/sh' 'exec python3 -m sandbox_runtime.credentials.git_credential_helper "$@"' | sudo tee /usr/local/bin/oi-git-credentials >/dev/null
+printf '%s\\n' '#!/bin/sh' 'exec ${VERCEL_PYTHON_BIN} -m sandbox_runtime.credentials.git_credential_helper "$@"' | sudo tee /usr/local/bin/oi-git-credentials >/dev/null
 sudo chmod 0755 /usr/local/bin/oi-git-credentials
 sudo git config --system credential.helper /usr/local/bin/oi-git-credentials || true
 sudo git config --system credential.useHttpPath true || true
@@ -727,7 +733,7 @@ def main():
     head_sha = ""
     last_error = ""
     proc = subprocess.Popen(
-        ["sudo", "-E", "python3", "-m", "sandbox_runtime.entrypoint"],
+        ["sudo", "-E", "/usr/bin/python3.12", "-m", "sandbox_runtime.entrypoint"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

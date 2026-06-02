@@ -172,7 +172,7 @@ describe("VercelSandboxProvider", () => {
       expect.objectContaining({
         sessionId: "vercel-session-1",
         command: "sudo",
-        args: ["-E", "python3", "-m", "sandbox_runtime.entrypoint"],
+        args: ["-E", "/usr/bin/python3.12", "-m", "sandbox_runtime.entrypoint"],
         cwd: "/workspace",
       }),
       undefined
@@ -216,7 +216,11 @@ describe("VercelSandboxProvider", () => {
       expect.objectContaining({
         sessionId: "vercel-session-1",
         command: "sudo",
-        args: expect.arrayContaining(["python3", "-c", expect.stringContaining("TUNNEL_3000")]),
+        args: expect.arrayContaining([
+          "/usr/bin/python3.12",
+          "-c",
+          expect.stringContaining("TUNNEL_3000"),
+        ]),
       }),
       undefined
     );
@@ -236,6 +240,7 @@ describe("VercelSandboxProvider", () => {
 
     await provider.createSandbox(baseCreateConfig);
 
+    const bootstrapScript = vi.mocked(client.runCommandAndWait).mock.calls[0][0].args?.[1] ?? "";
     expect(vi.mocked(client.runCommandAndWait)).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "vercel-session-1",
@@ -244,6 +249,11 @@ describe("VercelSandboxProvider", () => {
       }),
       undefined
     );
+    expect(bootstrapScript).toContain(
+      "sudo dnf install -y dnf-plugins-core git gcc gcc-c++ make ca-certificates openssh-clients jq unzip tar gzip python3.12 python3.12-pip python3.12-devel"
+    );
+    expect(bootstrapScript).toContain("sudo dnf install -y ffmpeg || true");
+    expect(bootstrapScript).toContain("sudo /usr/bin/python3.12 -m ensurepip --upgrade");
   });
 
   it("restores from a session snapshot and sets restore mode env vars", async () => {
@@ -359,7 +369,7 @@ describe("VercelSandboxProvider", () => {
     expect(vi.mocked(client.startCommand)).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "vercel-session-1",
-        command: "python3",
+        command: "/usr/bin/python3.12",
         args: ["-c", expect.stringContaining("def snapshot_session")],
         cwd: "/workspace",
         env: { OI_VERCEL_SESSION_ID: "vercel-session-1" },
