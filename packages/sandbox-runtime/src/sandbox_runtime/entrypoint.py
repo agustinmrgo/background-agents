@@ -1001,6 +1001,7 @@ class SandboxSupervisor:
 
         while not self.shutdown_event.is_set():
             if not await self.runtime_services.ensure_healthy(self._report_fatal_error):
+                self.log.error("runtime_services.unhealthy")
                 self.shutdown_event.set()
                 break
 

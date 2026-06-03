@@ -9,17 +9,47 @@ import pytest
 
 from sandbox_runtime.docker_service import DockerService
 from sandbox_runtime.entrypoint import SandboxSupervisor
+from sandbox_runtime.runtime_services import RuntimeServices
 
 
-def test_from_env_reads_enabled_and_data_root(monkeypatch, tmp_path):
+def test_docker_service_from_env_reads_data_root(monkeypatch, tmp_path):
     data_root = tmp_path / "docker-data"
-    monkeypatch.setenv("OPENINSPECT_DOCKER_ENABLED", "true")
     monkeypatch.setenv("DOCKER_DATA_ROOT", str(data_root))
 
     service = DockerService.from_env(MagicMock())
 
-    assert service.enabled is True
     assert service.data_root == data_root
+
+
+def test_runtime_services_omits_docker_when_disabled(monkeypatch):
+    monkeypatch.delenv("OPENINSPECT_DOCKER_ENABLED", raising=False)
+    monkeypatch.setenv("OPENINSPECT_SANDBOX_IMAGE_PROFILE", "default")
+    log = MagicMock()
+
+    services = RuntimeServices.from_env(log)
+
+    assert services.docker is None
+    log.info.assert_called_with(
+        "runtime_services.docker_disabled",
+        image_profile="default",
+    )
+
+
+def test_runtime_services_includes_docker_when_enabled(monkeypatch, tmp_path):
+    data_root = tmp_path / "docker-data"
+    monkeypatch.setenv("OPENINSPECT_DOCKER_ENABLED", "true")
+    monkeypatch.setenv("OPENINSPECT_SANDBOX_IMAGE_PROFILE", "docker")
+    monkeypatch.setenv("DOCKER_DATA_ROOT", str(data_root))
+    log = MagicMock()
+
+    services = RuntimeServices.from_env(log)
+
+    assert isinstance(services.docker, DockerService)
+    assert services.docker.data_root == data_root
+    log.info.assert_called_with(
+        "runtime_services.docker_enabled",
+        image_profile="docker",
+    )
 
 
 def test_prepare_runtime_state_preserves_snapshot_content(tmp_path):
@@ -58,6 +88,7 @@ async def test_supervisor_starts_docker_before_setup_in_build_mode():
         "SESSION_CONFIG": "{}",
         "IMAGE_BUILD_MODE": "true",
         "OPENINSPECT_DOCKER_ENABLED": "true",
+        "OPENINSPECT_SANDBOX_IMAGE_PROFILE": "docker",
     }
 
     order: list[str] = []
@@ -197,7 +228,6 @@ async def test_start_cleans_up_dockerd_when_readiness_fails(monkeypatch, tmp_pat
     process = FakeProcess()
     service = DockerService(
         MagicMock(),
-        enabled=True,
         data_root=tmp_path / "docker-data",
         run_paths=(tmp_path / "docker.sock", tmp_path / "docker.pid"),
     )
@@ -214,3 +244,24 @@ async def test_start_cleans_up_dockerd_when_readiness_fails(monkeypatch, tmp_pat
     assert process.terminated is True
     assert service.process is None
     assert service._log_task is None
+
+
+@pytest.mark.asyncio
+async def test_monitor_logs_when_runtime_services_are_unhealthy():
+    env = {
+        "SANDBOX_ID": "test-sandbox",
+        "REPO_OWNER": "acme",
+        "REPO_NAME": "repo",
+        "SESSION_CONFIG": "{}",
+    }
+
+    with patch.dict(os.environ, env, clear=False):
+        supervisor = SandboxSupervisor()
+
+    supervisor.runtime_services.ensure_healthy = AsyncMock(return_value=False)
+    supervisor.log = MagicMock()
+
+    await supervisor.monitor_processes()
+
+    supervisor.log.error.assert_any_call("runtime_services.unhealthy")
+    assert supervisor.shutdown_event.is_set()

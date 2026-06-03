@@ -19,7 +19,7 @@ DEFAULT_RUN_PATHS = (
 
 
 class DockerService:
-    """Starts and stops the in-sandbox Docker daemon when enabled."""
+    """Starts and stops a configured in-sandbox Docker daemon."""
 
     STALE_DATA_DIRS = ("network", "containers", "containerd", "runtimes", "tmp")
     READY_TIMEOUT_SECONDS = 30.0
@@ -27,13 +27,11 @@ class DockerService:
     def __init__(
         self,
         log,
-        enabled: bool = False,
         data_root: Path = DEFAULT_DOCKER_DATA_ROOT,
         run_paths: tuple[Path, ...] = DEFAULT_RUN_PATHS,
         ip_forward_path: Path = DEFAULT_IP_FORWARD_PATH,
     ):
         self.log = log
-        self.enabled = enabled
         self.data_root = data_root
         self.run_paths = run_paths
         self.ip_forward_path = ip_forward_path
@@ -44,7 +42,6 @@ class DockerService:
     def from_env(cls, log) -> "DockerService":
         return cls(
             log,
-            enabled=os.environ.get("OPENINSPECT_DOCKER_ENABLED", "").lower() == "true",
             data_root=Path(os.environ.get("DOCKER_DATA_ROOT", str(DEFAULT_DOCKER_DATA_ROOT))),
         )
 
@@ -55,7 +52,7 @@ class DockerService:
         return self.process.returncode
 
     def has_crashed(self) -> bool:
-        return self.enabled and self.exit_code is not None
+        return self.exit_code is not None
 
     def prepare_runtime_state(self) -> None:
         """Remove stale daemon/container metadata while preserving images, cache, and volumes."""
@@ -142,10 +139,6 @@ class DockerService:
                 await self._run_command("iptables-legacy", "-t", "nat", "-A", *rule)
 
     async def start(self) -> None:
-        if not self.enabled:
-            self.log.info("docker.skip", reason="OPENINSPECT_DOCKER_ENABLED not true")
-            return
-
         self.prepare_runtime_state()
         await self.configure_network()
 
