@@ -90,9 +90,7 @@ class DockerService:
             with suppress(ProcessLookupError):
                 proc.kill()
             await proc.wait()
-            raise RuntimeError(
-                f"{' '.join(args)} timed out after {timeout_seconds:.1f}s"
-            ) from None
+            raise RuntimeError(f"{' '.join(args)} timed out after {timeout_seconds:.1f}s") from None
         output = (stdout or b"").decode(errors="replace")
         if check and proc.returncode != 0:
             raise RuntimeError(f"{' '.join(args)} failed: {output.strip()}")
