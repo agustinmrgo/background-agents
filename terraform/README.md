@@ -82,6 +82,9 @@ brew install node@22
 2. **Note your Team ID** (found in team settings URL)
 3. If using `sandbox_provider = "vercel"`, also note the Project ID for the Vercel project that will
    own sandbox sessions.
+4. The Terraform GitHub Actions apply job builds an immutable Vercel base-runtime snapshot before
+   deploy and passes the generated snapshot ID into the control-plane Worker.
+   `VERCEL_BASE_SNAPSHOT_ID` is only needed as a manual fallback or for local Terraform runs.
 
 ### 4. Modal Setup
 
@@ -188,7 +191,7 @@ SANDBOX_PROVIDER
 VERCEL_SANDBOX_TOKEN
 VERCEL_SANDBOX_PROJECT_ID
 VERCEL_SANDBOX_TEAM_ID # Optional
-VERCEL_BASE_SNAPSHOT_ID # Optional
+VERCEL_BASE_SNAPSHOT_ID # Optional manual fallback; CI usually generates this
 
 # GitHub OAuth App
 GH_OAUTH_CLIENT_ID

@@ -421,6 +421,11 @@ Later sessions: [Restore Snapshot] ─▶ Quick sync ─▶ Start Runtime ─▶
 
 The first session for a repo pays the setup cost. Subsequent sessions restore in seconds.
 
+For Vercel, the Terraform GitHub Actions deploy builds a base-runtime snapshot before applying the
+control plane and wires that generated snapshot ID into `VERCEL_BASE_SNAPSHOT_ID`. Fresh Vercel
+sandboxes normally start from this managed runtime snapshot instead of cloning and installing the
+sandbox runtime on every session.
+
 ### Image Prebuilding
 
 For frequently-used repositories, images can be prebuilt on a schedule:

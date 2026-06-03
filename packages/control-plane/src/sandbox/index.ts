@@ -52,6 +52,19 @@ export {
   type VercelSandboxSession,
 } from "./vercel-client";
 export {
+  buildVercelBaseSnapshot,
+  buildBaseSnapshotSandboxName,
+  type BuildVercelBaseSnapshotConfig,
+  type BuildVercelBaseSnapshotResult,
+} from "./vercel-base-snapshot";
+export {
+  DEFAULT_VERCEL_RUNTIME,
+  DEFAULT_VERCEL_RUNTIME_REPO_REF,
+  DEFAULT_VERCEL_RUNTIME_REPO_URL,
+  VERCEL_PYTHON_BIN,
+  buildVercelBootstrapScript,
+} from "./vercel-bootstrap";
+export {
   DaytonaRestClient,
   DaytonaNotFoundError,
   DaytonaApiError,

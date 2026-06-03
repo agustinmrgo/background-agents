@@ -200,6 +200,12 @@ service is deployed. Vercel supports filesystem snapshots and repo prebuilt imag
 reusable base snapshot, set `vercel_base_snapshot_id` to skip runtime bootstrapping on every fresh
 sandbox.
 
+When the Terraform GitHub Actions apply job runs with `SANDBOX_PROVIDER=vercel`, it builds a fresh
+immutable Vercel base-runtime snapshot before `terraform apply` and passes the generated snapshot ID
+into the Worker deployment. This keeps the Vercel base runtime aligned with the configured
+`VERCEL_RUNTIME_REPO_URL`/`VERCEL_RUNTIME_REPO_REF`. The `vercel_base_snapshot_id` setting is still
+available for local Terraform runs or as a manual fallback.
+
 ### Anthropic
 
 1. Go to [Anthropic Console](https://console.anthropic.com)
@@ -393,7 +399,7 @@ modal_environment_web_suffix = "your-modal-web-suffix" # Lowercase letters, digi
 # vercel_sandbox_token      = "your-vercel-token"
 # vercel_sandbox_project_id = "prj_xxxxx"
 # vercel_sandbox_team_id    = "team_xxxxx" # Optional
-# vercel_base_snapshot_id   = "snapshot_xxxxx" # Optional but recommended for faster starts
+# vercel_base_snapshot_id   = "snapshot_xxxxx" # Optional manual fallback; CI usually generates this
 
 # GitHub App (used for both OAuth and repository access)
 github_client_id     = "Iv1.abc123..."           # From GitHub App settings
@@ -712,7 +718,7 @@ Go to your fork's Settings → Secrets and variables → Actions, and add:
 | `VERCEL_SANDBOX_TOKEN`         | Vercel API token _(only if `sandbox_provider = "vercel"`)_                                  |
 | `VERCEL_SANDBOX_PROJECT_ID`    | Vercel project ID for sandbox sessions _(only if `sandbox_provider = "vercel"`)_            |
 | `VERCEL_SANDBOX_TEAM_ID`       | Optional Vercel team/account ID for sandbox sessions                                        |
-| `VERCEL_BASE_SNAPSHOT_ID`      | Optional Vercel snapshot used as the base sandbox runtime                                   |
+| `VERCEL_BASE_SNAPSHOT_ID`      | Optional manual Vercel base-runtime snapshot; Terraform CI generates one for Vercel applies |
 | `GH_OAUTH_CLIENT_ID`           | GitHub App OAuth client ID                                                                  |
 | `GH_OAUTH_CLIENT_SECRET`       | GitHub App OAuth client secret                                                              |
 | `GH_APP_ID`                    | GitHub App ID                                                                               |
