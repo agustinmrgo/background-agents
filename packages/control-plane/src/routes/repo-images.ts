@@ -15,7 +15,7 @@ import { RepoSecretsStore } from "../db/repo-secrets";
 import { mergeSecrets } from "../db/secrets-validation";
 import { RepoImageBuildProfileResolver } from "../repo-images/build-profile-resolver";
 import { createModalClient } from "../sandbox/client";
-import { isModalSandboxBackend } from "../sandbox/provider-name";
+import { getProviderCapabilities } from "@open-inspect/shared";
 import { createLogger } from "../logger";
 import type { Env } from "../types";
 import {
@@ -32,12 +32,12 @@ import {
 
 const logger = createLogger("router:repo-images");
 
-function requireModalRepoImages(env: Env): Response | null {
-  if (isModalSandboxBackend(env.SANDBOX_PROVIDER)) {
+function requirePrebuiltImageSupport(env: Env): Response | null {
+  if (getProviderCapabilities(env.SANDBOX_PROVIDER).supportsPrebuiltImages) {
     return null;
   }
 
-  return error("Repo images are only available when SANDBOX_PROVIDER=modal", 501);
+  return error("Repo images are not supported by the configured sandbox provider", 501);
 }
 
 /**
@@ -50,7 +50,7 @@ async function handleBuildComplete(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -136,7 +136,7 @@ async function handleBuildFailed(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -185,7 +185,7 @@ async function handleTriggerBuild(
   match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -320,7 +320,7 @@ async function handleGetStatus(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -362,7 +362,7 @@ async function handleMarkStale(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -412,7 +412,7 @@ async function handleCleanup(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -462,7 +462,7 @@ async function handleToggleImageBuild(
   match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {
@@ -516,7 +516,7 @@ async function handleGetEnabledRepos(
   _match: RegExpMatchArray,
   ctx: RequestContext
 ): Promise<Response> {
-  const providerError = requireModalRepoImages(env);
+  const providerError = requirePrebuiltImageSupport(env);
   if (providerError) return providerError;
 
   if (!env.DB) {

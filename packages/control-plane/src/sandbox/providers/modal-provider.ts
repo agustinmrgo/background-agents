@@ -7,7 +7,7 @@
 
 import { ModalApiError } from "../client";
 import type { ModalClient } from "../client";
-import { DEFAULT_SANDBOX_IMAGE_PROFILE } from "@open-inspect/shared";
+import { DEFAULT_SANDBOX_IMAGE_PROFILE, PROVIDER_CAPABILITIES } from "@open-inspect/shared";
 import {
   DEFAULT_SANDBOX_TIMEOUT_SECONDS,
   SandboxProviderError,
@@ -44,14 +44,7 @@ import {
 export class ModalSandboxProvider implements SandboxProvider {
   readonly name = "modal";
 
-  readonly capabilities: SandboxProviderCapabilities = {
-    supportsSnapshots: true,
-    supportsRestore: true,
-    supportsWarm: true,
-    supportsPersistentResume: false,
-    supportsExplicitStop: false,
-    supportsDocker: true,
-  };
+  readonly capabilities: SandboxProviderCapabilities = PROVIDER_CAPABILITIES.modal;
 
   constructor(private readonly client: ModalClient) {}
 

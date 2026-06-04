@@ -117,6 +117,8 @@ describe("DaytonaSandboxProvider", () => {
         supportsPersistentResume: true,
         supportsExplicitStop: true,
         supportsDocker: false,
+        supportsPrebuiltImages: false,
+        supportsDashboardUrl: false,
       });
     });
   });

@@ -8,6 +8,7 @@
 import {
   computeHmacHex,
   MAX_TUNNEL_PORTS,
+  PROVIDER_CAPABILITIES,
   type SandboxRuntimeSettings,
 } from "@open-inspect/shared";
 import { createLogger } from "../../logger";
@@ -53,14 +54,7 @@ export interface DaytonaProviderConfig {
 export class DaytonaSandboxProvider implements SandboxProvider {
   readonly name = "daytona";
 
-  readonly capabilities: SandboxProviderCapabilities = {
-    supportsSnapshots: false,
-    supportsRestore: false,
-    supportsWarm: false,
-    supportsPersistentResume: true,
-    supportsExplicitStop: true,
-    supportsDocker: false,
-  };
+  readonly capabilities: SandboxProviderCapabilities = PROVIDER_CAPABILITIES.daytona;
 
   constructor(
     private readonly client: DaytonaRestClient,

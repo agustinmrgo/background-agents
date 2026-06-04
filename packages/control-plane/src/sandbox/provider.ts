@@ -5,31 +5,22 @@
  * enabling unit testing and future provider support.
  */
 
-import type { SandboxImageProfile, SandboxRuntimeSettings } from "@open-inspect/shared";
+import type {
+  SandboxImageProfile,
+  SandboxProviderCapabilities,
+  SandboxRuntimeSettings,
+} from "@open-inspect/shared";
 import type { CorrelationContext } from "../logger";
 import type { McpServerConfig } from "@open-inspect/shared";
 
+// The provider capability descriptor lives in @open-inspect/shared so the
+// control plane and the web app read the same source of truth. Re-exported
+// here for the many call sites that import it alongside the provider config
+// types.
+export type { SandboxProviderCapabilities };
+
 /** Default sandbox lifetime in seconds (2 hours). */
 export const DEFAULT_SANDBOX_TIMEOUT_SECONDS = 7200;
-
-/**
- * Capabilities supported by a sandbox provider.
- * Providers can support different feature sets.
- */
-export interface SandboxProviderCapabilities {
-  /** Whether the provider supports filesystem snapshots */
-  supportsSnapshots: boolean;
-  /** Whether the provider supports restoring from snapshots */
-  supportsRestore: boolean;
-  /** Whether the provider supports pre-warming sandboxes */
-  supportsWarm: boolean;
-  /** Whether the provider can resume a previously stopped sandbox in place */
-  supportsPersistentResume?: boolean;
-  /** Whether the provider can stop a sandbox explicitly via API */
-  supportsExplicitStop?: boolean;
-  /** Whether the provider can run Docker Engine inside sandboxes */
-  supportsDocker?: boolean;
-}
 
 /**
  * Configuration for creating a new sandbox.
