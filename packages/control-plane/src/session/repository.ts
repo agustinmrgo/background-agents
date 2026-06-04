@@ -29,7 +29,7 @@ import {
   type EventListCursor,
   type EventTimelineCursor,
 } from "./event-cursor";
-import type { SandboxImageProfile } from "@open-inspect/shared";
+import { isSandboxImageProfile, type SandboxImageProfile } from "@open-inspect/shared";
 
 type TokenEvent = Extract<SandboxEvent, { type: "token" }>;
 type ExecutionCompleteEvent = Extract<SandboxEvent, { type: "execution_complete" }>;
@@ -418,6 +418,12 @@ export class SessionRepository {
     imageId: string,
     imageProfile: SandboxImageProfile
   ): void {
+    // The DO `snapshot_image_profile` column is bare TEXT (no CHECK, unlike the
+    // D1 repo_images.image_profile column). Validate against the shared allow-set
+    // so an unexpected value can never corrupt snapshot-compatibility matching.
+    if (!isSandboxImageProfile(imageProfile)) {
+      throw new Error(`Invalid sandbox image profile for snapshot: ${String(imageProfile)}`);
+    }
     this.sql.exec(
       `UPDATE sandbox SET snapshot_image_id = ?, snapshot_image_profile = ? WHERE id = ?`,
       imageId,

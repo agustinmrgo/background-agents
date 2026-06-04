@@ -13,6 +13,7 @@ from ..app import app
 from ..images.base import base_image, docker_image
 from .settings import (
     DOCKER_IMAGE_PROFILE,
+    DockerDeployPolicy,
     DockerLaunchSettings,
     RuntimePortSettings,
     SandboxImageProfile,
@@ -36,21 +37,26 @@ class RuntimeLaunchOptions:
         settings: SandboxRuntimeSettings,
         code_server_enabled: bool,
         image_profile: SandboxImageProfile,
+        docker_policy: DockerDeployPolicy | None = None,
     ) -> RuntimeLaunchOptions:
         ports = RuntimePortSettings.from_settings(settings, code_server_enabled)
         return cls(
             image_profile=image_profile,
-            docker=DockerLaunchSettings.from_profile(image_profile),
+            docker=DockerLaunchSettings.from_profile(image_profile, docker_policy),
             terminal_enabled=settings.terminal_enabled,
             exposed_ports=ports.exposed_ports,
             tunnel_ports=ports.tunnel_ports,
         )
 
     @classmethod
-    def for_image_build(cls, image_profile: SandboxImageProfile) -> RuntimeLaunchOptions:
+    def for_image_build(
+        cls,
+        image_profile: SandboxImageProfile,
+        docker_policy: DockerDeployPolicy | None = None,
+    ) -> RuntimeLaunchOptions:
         return cls(
             image_profile=image_profile,
-            docker=DockerLaunchSettings.from_profile(image_profile),
+            docker=DockerLaunchSettings.from_profile(image_profile, docker_policy),
         )
 
 

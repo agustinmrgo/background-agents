@@ -34,7 +34,7 @@ from .launch_options import (
     select_base_image,
     select_runtime_image,
 )
-from .settings import SandboxImageProfile, SandboxRuntimeSettings
+from .settings import DockerDeployPolicy, SandboxImageProfile, SandboxRuntimeSettings
 
 log = get_logger("manager")
 
@@ -328,6 +328,7 @@ class SandboxManager:
             runtime_settings,
             config.code_server_enabled,
             config.image_profile,
+            docker_policy=DockerDeployPolicy.from_env(),
         )
 
         if config.agent_slack_notify_enabled:
@@ -438,7 +439,10 @@ class SandboxManager:
         )
 
         self._inject_vcs_env_vars(env_vars, clone_token or None)
-        launch_options = RuntimeLaunchOptions.for_image_build(image_profile)
+        launch_options = RuntimeLaunchOptions.for_image_build(
+            image_profile,
+            docker_policy=DockerDeployPolicy.from_env(),
+        )
         create_kwargs = build_modal_create_kwargs(
             launch_options,
             image=select_base_image(launch_options.image_profile),
@@ -676,6 +680,7 @@ class SandboxManager:
             runtime_settings,
             code_server_enabled,
             image_profile,
+            docker_policy=DockerDeployPolicy.from_env(),
         )
 
         if agent_slack_notify_enabled:

@@ -92,6 +92,27 @@ class RuntimePortSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DockerDeployPolicy:
+    """Deploy-level Docker resource overrides.
+
+    Read once from the environment at the request/config layer (see
+    ``from_env``) and injected into ``DockerLaunchSettings.from_profile`` so the
+    launch-settings value object stays pure and testable without monkeypatching
+    ``os.environ``.
+    """
+
+    cpu: float | None = None
+    memory_mb: int | None = None
+
+    @classmethod
+    def from_env(cls) -> DockerDeployPolicy:
+        return cls(
+            cpu=_optional_env_float("MODAL_DOCKER_SANDBOX_CPU"),
+            memory_mb=_optional_env_int("MODAL_DOCKER_SANDBOX_MEMORY_MB"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class DockerLaunchSettings:
     """Docker-specific Modal launch settings after deploy policy is applied."""
 
@@ -101,13 +122,18 @@ class DockerLaunchSettings:
     memory_mb: int | None = None
 
     @classmethod
-    def from_profile(cls, image_profile: SandboxImageProfile) -> DockerLaunchSettings:
+    def from_profile(
+        cls,
+        image_profile: SandboxImageProfile,
+        policy: DockerDeployPolicy | None = None,
+    ) -> DockerLaunchSettings:
         if image_profile != DOCKER_IMAGE_PROFILE:
             return cls()
+        policy = policy or DockerDeployPolicy()
         return cls(
             enabled=True,
-            cpu=_optional_env_float("MODAL_DOCKER_SANDBOX_CPU"),
-            memory_mb=_optional_env_int("MODAL_DOCKER_SANDBOX_MEMORY_MB"),
+            cpu=policy.cpu,
+            memory_mb=policy.memory_mb,
         )
 
     def env_vars(self) -> dict[str, str]:
