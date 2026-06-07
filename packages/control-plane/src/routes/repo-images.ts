@@ -99,8 +99,6 @@ function createConfiguredVercelProvider(env: Env) {
     apiBaseUrl: env.VERCEL_SANDBOX_API_BASE_URL,
     baseSnapshotId: env.VERCEL_BASE_SNAPSHOT_ID,
     runtime: env.VERCEL_RUNTIME,
-    runtimeRepoUrl: env.VERCEL_RUNTIME_REPO_URL,
-    runtimeRepoRef: env.VERCEL_RUNTIME_REPO_REF,
     snapshotExpirationMs: parseInt(env.VERCEL_SNAPSHOT_EXPIRATION_MS || "0", 10),
     codeServerPasswordSecret: env.VERCEL_TOKEN,
     internalCallbackSecret: env.INTERNAL_CALLBACK_SECRET,

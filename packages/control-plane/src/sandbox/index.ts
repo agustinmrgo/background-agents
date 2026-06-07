@@ -59,8 +59,7 @@ export {
 } from "./vercel-base-snapshot";
 export {
   DEFAULT_VERCEL_RUNTIME,
-  DEFAULT_VERCEL_RUNTIME_REPO_REF,
-  DEFAULT_VERCEL_RUNTIME_REPO_URL,
+  VERCEL_LOCAL_RUNTIME_EXTRACT_DIR,
   VERCEL_PYTHON_BIN,
   buildVercelBootstrapScript,
 } from "./vercel-bootstrap";

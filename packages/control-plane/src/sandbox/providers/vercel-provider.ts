@@ -26,13 +26,7 @@ import type {
   VercelSandboxRoute,
 } from "../vercel-client";
 import { VercelSandboxApiError } from "../vercel-client";
-import {
-  DEFAULT_VERCEL_RUNTIME,
-  DEFAULT_VERCEL_RUNTIME_REPO_REF,
-  DEFAULT_VERCEL_RUNTIME_REPO_URL,
-  VERCEL_PYTHON_BIN,
-  buildVercelBootstrapScript,
-} from "../vercel-bootstrap";
+import { DEFAULT_VERCEL_RUNTIME, VERCEL_PYTHON_BIN } from "../vercel-bootstrap";
 
 const log = createLogger("vercel-provider");
 
@@ -42,13 +36,10 @@ const TUNNEL_ENV_FILE_PATH = "/workspace/.tunnels.env";
 const EXPECTED_TUNNEL_PORTS_ENV_VAR = "EXPECTED_TUNNEL_PORTS";
 const DEFAULT_SNAPSHOT_EXPIRATION_MS = 0;
 const BUILD_TIMEOUT_SECONDS = 1800;
-const VERCEL_BOOTSTRAP_TIMEOUT_MS = 20 * 60 * 1000;
 const VERCEL_TUNNEL_ENV_WRITE_TIMEOUT_MS = 30_000;
 
 export interface VercelProviderConfig {
   scmProvider: SourceControlProviderName;
-  runtimeRepoUrl?: string;
-  runtimeRepoRef?: string;
   baseSnapshotId?: string;
   runtime?: string;
   snapshotExpirationMs?: number;
@@ -102,6 +93,11 @@ export class VercelSandboxProvider implements SandboxProvider {
         config.sandboxSettings
       ).allExposedPorts;
       const sourceSnapshotId = config.repoImageId || this.providerConfig.baseSnapshotId;
+      if (!sourceSnapshotId) {
+        throw new Error(
+          "VERCEL_BASE_SNAPSHOT_ID is required for fresh Vercel sandboxes when no repo image snapshot is available"
+        );
+      }
 
       const created = await this.client.createSandbox(
         {
@@ -111,14 +107,10 @@ export class VercelSandboxProvider implements SandboxProvider {
           ports,
           env,
           tags: this.buildTags(config),
-          sourceSnapshotId: sourceSnapshotId || undefined,
+          sourceSnapshotId,
         },
         config.correlation
       );
-
-      if (!sourceSnapshotId) {
-        await this.bootstrapRuntime(created.session.id, config.correlation);
-      }
 
       const access = await this.prepareSandboxAccess(
         created,
@@ -239,6 +231,10 @@ export class VercelSandboxProvider implements SandboxProvider {
     }
 
     try {
+      if (!this.providerConfig.baseSnapshotId) {
+        throw new Error("VERCEL_BASE_SNAPSHOT_ID is required to build Vercel repo image snapshots");
+      }
+
       const sandboxName = `build-${config.repoOwner}-${config.repoName}-${Date.now()}`;
       const env = await this.buildBuildEnvVars(config);
       const created = await this.client.createSandbox(
@@ -257,10 +253,6 @@ export class VercelSandboxProvider implements SandboxProvider {
         },
         config.correlation
       );
-
-      if (!this.providerConfig.baseSnapshotId) {
-        await this.bootstrapRuntime(created.session.id, config.correlation);
-      }
 
       await this.launchBuildCoordinator(
         created.session.id,
@@ -479,28 +471,6 @@ export class VercelSandboxProvider implements SandboxProvider {
     );
     if (result.exitCode !== 0) {
       throw new Error(`Failed to write Vercel tunnel env file (exit_code=${result.exitCode})`);
-    }
-  }
-
-  private async bootstrapRuntime(
-    sessionId: string,
-    correlation?: CreateSandboxConfig["correlation"]
-  ): Promise<void> {
-    const script = buildVercelBootstrapScript({
-      runtimeRepoUrl: this.providerConfig.runtimeRepoUrl || DEFAULT_VERCEL_RUNTIME_REPO_URL,
-      runtimeRepoRef: this.providerConfig.runtimeRepoRef || DEFAULT_VERCEL_RUNTIME_REPO_REF,
-    });
-    const result = await this.client.runCommandAndWait(
-      {
-        sessionId,
-        command: "bash",
-        args: ["-lc", script],
-        timeoutMs: VERCEL_BOOTSTRAP_TIMEOUT_MS,
-      },
-      correlation
-    );
-    if (result.exitCode !== 0) {
-      throw new Error(`Vercel runtime bootstrap failed with exit code ${result.exitCode}`);
     }
   }
 

@@ -85,8 +85,6 @@ module "control_plane_worker" {
     local.use_vercel_backend ? [
       { name = "VERCEL_PROJECT_ID", value = var.vercel_sandbox_project_id },
       { name = "VERCEL_RUNTIME", value = var.vercel_sandbox_runtime },
-      { name = "VERCEL_RUNTIME_REPO_URL", value = var.vercel_runtime_repo_url },
-      { name = "VERCEL_RUNTIME_REPO_REF", value = var.vercel_runtime_repo_ref },
       { name = "VERCEL_SNAPSHOT_EXPIRATION_MS", value = tostring(var.vercel_snapshot_expiration_ms) },
     ] : [],
     local.use_vercel_backend && var.vercel_sandbox_team_id != "" ? [

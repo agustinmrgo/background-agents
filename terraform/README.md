@@ -209,8 +209,6 @@ VERCEL_SANDBOX_PROJECT_ID
 VERCEL_SANDBOX_TEAM_ID # Optional
 VERCEL_BASE_SNAPSHOT_ID # Optional manual fallback; CI usually generates this
 VERCEL_SANDBOX_RUNTIME # Optional; defaults to node24
-VERCEL_RUNTIME_REPO_URL # Optional; defaults to the public Open-Inspect repo
-VERCEL_RUNTIME_REPO_REF # Optional; defaults to main
 VERCEL_SNAPSHOT_EXPIRATION_MS # Optional; defaults to 0
 VERCEL_SANDBOX_API_BASE_URL # Optional advanced base-snapshot builder override
 

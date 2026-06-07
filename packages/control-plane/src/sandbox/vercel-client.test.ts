@@ -214,6 +214,28 @@ describe("VercelSandboxClient", () => {
     ).rejects.toThrow(VercelSandboxApiError);
   });
 
+  it("uploads a gzip archive into a sandbox filesystem", async () => {
+    fetchSpy.mockResolvedValue(new Response("", { status: 200 }));
+    const archive = new Uint8Array([1, 2, 3]);
+
+    await createClient().writeFileArchive({
+      sessionId: "session/1",
+      archive,
+      extractDir: "/tmp/open-inspect-runtime/packages",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://vercel.test/api/v2/sandboxes/sessions/session%2F1/fs/write?teamId=team-456",
+      expect.objectContaining({
+        method: "POST",
+        body: archive,
+      })
+    );
+    const headers = new Headers(lastFetchInit().headers);
+    expect(headers.get("content-type")).toBe("application/gzip");
+    expect(headers.get("x-cwd")).toBe("/tmp/open-inspect-runtime/packages");
+  });
+
   it("creates and deletes snapshots with the expected endpoints", async () => {
     fetchSpy
       .mockResolvedValueOnce(

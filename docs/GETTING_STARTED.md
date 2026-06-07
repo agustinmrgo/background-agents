@@ -202,9 +202,9 @@ sandbox.
 
 When the Terraform GitHub Actions apply job runs with `SANDBOX_PROVIDER=vercel`, it builds a fresh
 immutable Vercel base-runtime snapshot before `terraform apply` and passes the generated snapshot ID
-into the Worker deployment. This keeps the Vercel base runtime aligned with the configured
-`VERCEL_RUNTIME_REPO_URL`/`VERCEL_RUNTIME_REPO_REF`. The `vercel_base_snapshot_id` setting is still
-available for local Terraform runs or as a manual fallback. See
+into the Worker deployment. This keeps the Vercel base runtime aligned with the checked-out
+`packages/sandbox-runtime` source. The `vercel_base_snapshot_id` setting is still available for
+local Terraform runs or as a manual fallback. See
 [Vercel Sandbox Provider](VERCEL_SANDBOX_PROVIDER.md) for the full runtime, snapshot, and resource
 configuration model.
 
@@ -405,10 +405,8 @@ modal_environment_web_suffix = "your-modal-web-suffix" # Lowercase letters, digi
 # vercel_sandbox_token      = "your-vercel-token"
 # vercel_sandbox_project_id = "prj_xxxxx"
 # vercel_sandbox_team_id    = "team_xxxxx" # Optional
-# vercel_base_snapshot_id   = "snapshot_xxxxx" # Optional manual fallback; CI usually generates this
+# vercel_base_snapshot_id   = "snapshot_xxxxx" # Required for local applies; CI usually generates this
 # vercel_sandbox_runtime    = "node24"
-# vercel_runtime_repo_url   = "https://github.com/ColeMurray/background-agents.git"
-# vercel_runtime_repo_ref   = "main"
 # vercel_snapshot_expiration_ms = 0
 
 # GitHub App (used for both OAuth and repository access)
@@ -735,8 +733,6 @@ Go to your fork's Settings → Secrets and variables → Actions, and add:
 | `VERCEL_SANDBOX_TEAM_ID`         | Optional Vercel team/account ID for sandbox sessions                                        |
 | `VERCEL_BASE_SNAPSHOT_ID`        | Optional manual Vercel base-runtime snapshot; Terraform CI generates one for Vercel applies |
 | `VERCEL_SANDBOX_RUNTIME`         | Optional Vercel Sandbox runtime (defaults to `node24`)                                      |
-| `VERCEL_RUNTIME_REPO_URL`        | Optional runtime source repo for managed Vercel base snapshots                              |
-| `VERCEL_RUNTIME_REPO_REF`        | Optional runtime source ref for managed Vercel base snapshots (defaults to `main`)          |
 | `VERCEL_SNAPSHOT_EXPIRATION_MS`  | Optional Vercel runtime snapshot expiration in milliseconds (`0` means no expiration)       |
 | `VERCEL_SANDBOX_API_BASE_URL`    | Optional advanced override used only by the Vercel base-snapshot CI builder                 |
 | `GH_OAUTH_CLIENT_ID`             | GitHub App OAuth client ID                                                                  |

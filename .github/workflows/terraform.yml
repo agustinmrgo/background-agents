@@ -229,8 +229,6 @@ jobs:
           TF_VAR_vercel_sandbox_team_id: ${{ secrets.VERCEL_SANDBOX_TEAM_ID }}
           TF_VAR_vercel_base_snapshot_id: ${{ secrets.VERCEL_BASE_SNAPSHOT_ID }}
           TF_VAR_vercel_sandbox_runtime: "${{ secrets.VERCEL_SANDBOX_RUNTIME || 'node24' }}"
-          TF_VAR_vercel_runtime_repo_url: "${{ secrets.VERCEL_RUNTIME_REPO_URL || 'https://github.com/ColeMurray/background-agents.git' }}"
-          TF_VAR_vercel_runtime_repo_ref: "${{ secrets.VERCEL_RUNTIME_REPO_REF || 'main' }}"
           TF_VAR_vercel_snapshot_expiration_ms: "${{ secrets.VERCEL_SNAPSHOT_EXPIRATION_MS || '0' }}"
 
       - name: Post Plan Results
@@ -343,8 +341,7 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_SANDBOX_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_SANDBOX_TEAM_ID }}
           VERCEL_RUNTIME: "${{ secrets.VERCEL_SANDBOX_RUNTIME || 'node24' }}"
-          VERCEL_RUNTIME_REPO_URL: "${{ secrets.VERCEL_RUNTIME_REPO_URL || 'https://github.com/ColeMurray/background-agents.git' }}"
-          VERCEL_RUNTIME_REPO_REF: "${{ secrets.VERCEL_RUNTIME_REPO_REF || 'main' }}"
+          VERCEL_RUNTIME_SOURCE_DIR: packages/sandbox-runtime
           VERCEL_SANDBOX_API_BASE_URL: ${{ secrets.VERCEL_SANDBOX_API_BASE_URL }}
 
       - name: Terraform Init
@@ -408,8 +405,6 @@ jobs:
           TF_VAR_vercel_sandbox_team_id: ${{ secrets.VERCEL_SANDBOX_TEAM_ID }}
           TF_VAR_vercel_base_snapshot_id: ${{ steps.vercel_base_snapshot.outputs.snapshot_id || secrets.VERCEL_BASE_SNAPSHOT_ID }}
           TF_VAR_vercel_sandbox_runtime: "${{ secrets.VERCEL_SANDBOX_RUNTIME || 'node24' }}"
-          TF_VAR_vercel_runtime_repo_url: "${{ secrets.VERCEL_RUNTIME_REPO_URL || 'https://github.com/ColeMurray/background-agents.git' }}"
-          TF_VAR_vercel_runtime_repo_ref: "${{ secrets.VERCEL_RUNTIME_REPO_REF || 'main' }}"
           TF_VAR_vercel_snapshot_expiration_ms: "${{ secrets.VERCEL_SNAPSHOT_EXPIRATION_MS || '0' }}"
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}

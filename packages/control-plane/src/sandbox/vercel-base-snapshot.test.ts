@@ -5,6 +5,7 @@ import type {
   VercelRunCommandRequest,
   VercelSandboxClient,
   VercelSnapshotResponse,
+  VercelWriteFileArchiveRequest,
 } from "./vercel-client";
 
 function createSessionResponse(sessionId = "session-1"): VercelCreateSandboxResponse {
@@ -32,6 +33,7 @@ function createMockClient(
     runCommandAndWait: (
       request: VercelRunCommandRequest
     ) => Promise<{ commandId: string; exitCode: number | null }>;
+    writeFileArchive: (request: VercelWriteFileArchiveRequest) => Promise<void>;
     snapshotSession: (sessionId: string) => Promise<VercelSnapshotResponse>;
     stopSession: (sessionId: string) => Promise<void>;
   }> = {}
@@ -39,6 +41,7 @@ function createMockClient(
   return {
     createSandbox: vi.fn(async () => createSessionResponse()),
     runCommandAndWait: vi.fn(async () => ({ commandId: "cmd-1", exitCode: 0 })),
+    writeFileArchive: vi.fn(async () => {}),
     snapshotSession: vi.fn(
       async (): Promise<VercelSnapshotResponse> => ({
         snapshot: { id: "snap-base-1", status: "created", createdAt: 456 },
@@ -56,8 +59,7 @@ describe("buildVercelBaseSnapshot", () => {
 
     const result = await buildVercelBaseSnapshot(client, {
       runtime: "node24",
-      runtimeRepoUrl: "https://github.com/example/runtime.git",
-      runtimeRepoRef: "release",
+      runtimeArchive: new Uint8Array([1, 2, 3]),
       sourceVersion: "abcdef1234567890",
       now: 1780000000000,
     });
@@ -71,9 +73,30 @@ describe("buildVercelBaseSnapshot", () => {
         tags: expect.objectContaining({
           openinspect_framework: "open-inspect",
           openinspect_kind: "base-runtime-build",
-          openinspect_runtime_ref: "release",
+          openinspect_runtime_source: "local-checkout",
+          openinspect_runtime_ref: "abcdef1234567890",
           openinspect_source_version: "abcdef1234567890",
         }),
+      }),
+      undefined
+    );
+    expect(vi.mocked(client.writeFileArchive)).toHaveBeenCalledWith(
+      {
+        sessionId: "session-1",
+        archive: new Uint8Array([1, 2, 3]),
+        extractDir: "/tmp/open-inspect-runtime/packages",
+      },
+      undefined
+    );
+    expect(vi.mocked(client.runCommandAndWait)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-1",
+        command: "bash",
+        args: [
+          "-lc",
+          "rm -rf '/tmp/open-inspect-runtime' && mkdir -p '/tmp/open-inspect-runtime/packages'",
+        ],
+        timeoutMs: 30_000,
       }),
       undefined
     );
@@ -81,7 +104,7 @@ describe("buildVercelBaseSnapshot", () => {
       expect.objectContaining({
         sessionId: "session-1",
         command: "bash",
-        args: ["-lc", expect.stringContaining("RUNTIME_REPO_REF='release'")],
+        args: ["-lc", expect.stringContaining("/tmp/open-inspect-runtime/packages")],
         timeoutMs: 20 * 60 * 1000,
       }),
       undefined
@@ -101,12 +124,15 @@ describe("buildVercelBaseSnapshot", () => {
 
   it("stops the temporary sandbox when bootstrap fails", async () => {
     const client = createMockClient({
-      runCommandAndWait: vi.fn(async () => ({ commandId: "cmd-1", exitCode: 1 })),
+      runCommandAndWait: vi
+        .fn()
+        .mockResolvedValueOnce({ commandId: "cmd-1", exitCode: 0 })
+        .mockResolvedValueOnce({ commandId: "cmd-2", exitCode: 1 }),
     });
 
-    await expect(buildVercelBaseSnapshot(client)).rejects.toThrow(
-      "Vercel base runtime bootstrap failed"
-    );
+    await expect(
+      buildVercelBaseSnapshot(client, { runtimeArchive: new Uint8Array([1]) })
+    ).rejects.toThrow("Vercel base runtime bootstrap failed");
     expect(vi.mocked(client.stopSession)).toHaveBeenCalledWith("session-1", undefined);
     expect(vi.mocked(client.snapshotSession)).not.toHaveBeenCalled();
   });

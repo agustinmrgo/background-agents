@@ -357,18 +357,6 @@ variable "vercel_sandbox_runtime" {
   default     = "node24"
 }
 
-variable "vercel_runtime_repo_url" {
-  description = "Repository URL used to bootstrap sandbox-runtime when no Vercel base snapshot is configured"
-  type        = string
-  default     = "https://github.com/ColeMurray/background-agents.git"
-}
-
-variable "vercel_runtime_repo_ref" {
-  description = "Repository ref used to bootstrap sandbox-runtime when no Vercel base snapshot is configured"
-  type        = string
-  default     = "main"
-}
-
 variable "vercel_snapshot_expiration_ms" {
   description = "Vercel Sandbox snapshot expiration in milliseconds; 0 means no expiration"
   type        = number

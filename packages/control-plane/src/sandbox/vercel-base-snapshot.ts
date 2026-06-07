@@ -11,8 +11,8 @@ import { createLogger } from "../logger";
 import type { CorrelationContext } from "../logger";
 import {
   DEFAULT_VERCEL_RUNTIME,
-  DEFAULT_VERCEL_RUNTIME_REPO_REF,
-  DEFAULT_VERCEL_RUNTIME_REPO_URL,
+  VERCEL_LOCAL_RUNTIME_EXTRACT_DIR,
+  VERCEL_RUNTIME_WORKDIR,
   buildVercelBootstrapScript,
 } from "./vercel-bootstrap";
 import type { VercelSandboxClient } from "./vercel-client";
@@ -21,12 +21,13 @@ const log = createLogger("vercel-base-snapshot");
 
 const DEFAULT_BASE_SNAPSHOT_NAME_PREFIX = "openinspect-base";
 const DEFAULT_BASE_SNAPSHOT_TIMEOUT_MS = 30 * 60 * 1000;
+const PREPARE_RUNTIME_UPLOAD_TIMEOUT_MS = 30_000;
 const BOOTSTRAP_TIMEOUT_MS = 20 * 60 * 1000;
 
 export interface BuildVercelBaseSnapshotConfig {
   runtime?: string;
-  runtimeRepoUrl?: string;
-  runtimeRepoRef?: string;
+  runtimeArchive: Uint8Array;
+  runtimeExtractDir?: string;
   sourceVersion?: string;
   namePrefix?: string;
   now?: number;
@@ -41,10 +42,10 @@ export interface BuildVercelBaseSnapshotResult {
 
 export async function buildVercelBaseSnapshot(
   client: VercelSandboxClient,
-  config: BuildVercelBaseSnapshotConfig = {}
+  config: BuildVercelBaseSnapshotConfig
 ): Promise<BuildVercelBaseSnapshotResult> {
-  const runtimeRepoUrl = config.runtimeRepoUrl || DEFAULT_VERCEL_RUNTIME_REPO_URL;
-  const runtimeRepoRef = config.runtimeRepoRef || DEFAULT_VERCEL_RUNTIME_REPO_REF;
+  const runtimeExtractDir = config.runtimeExtractDir || VERCEL_LOCAL_RUNTIME_EXTRACT_DIR;
+  const runtimeSourceRef = config.sourceVersion || "local-checkout";
   const sandboxName = buildBaseSnapshotSandboxName({
     prefix: config.namePrefix || DEFAULT_BASE_SNAPSHOT_NAME_PREFIX,
     sourceVersion: config.sourceVersion,
@@ -60,7 +61,8 @@ export async function buildVercelBaseSnapshot(
       tags: {
         openinspect_framework: "open-inspect",
         openinspect_kind: "base-runtime-build",
-        openinspect_runtime_ref: runtimeRepoRef,
+        openinspect_runtime_source: "local-checkout",
+        openinspect_runtime_ref: runtimeSourceRef,
         ...(config.sourceVersion ? { openinspect_source_version: config.sourceVersion } : {}),
       },
     },
@@ -69,11 +71,38 @@ export async function buildVercelBaseSnapshot(
 
   const sessionId = created.session.id;
   try {
+    const prepareResult = await client.runCommandAndWait(
+      {
+        sessionId,
+        command: "bash",
+        args: [
+          "-lc",
+          `rm -rf ${shellQuote(VERCEL_RUNTIME_WORKDIR)} && mkdir -p ${shellQuote(runtimeExtractDir)}`,
+        ],
+        timeoutMs: PREPARE_RUNTIME_UPLOAD_TIMEOUT_MS,
+      },
+      config.correlation
+    );
+    if (prepareResult.exitCode !== 0) {
+      throw new Error(
+        `Vercel base runtime upload directory preparation failed with exit code ${prepareResult.exitCode}`
+      );
+    }
+
+    await client.writeFileArchive(
+      {
+        sessionId,
+        archive: config.runtimeArchive,
+        extractDir: runtimeExtractDir,
+      },
+      config.correlation
+    );
+
     const result = await client.runCommandAndWait(
       {
         sessionId,
         command: "bash",
-        args: ["-lc", buildVercelBootstrapScript({ runtimeRepoUrl, runtimeRepoRef })],
+        args: ["-lc", buildVercelBootstrapScript({ runtimeExtractDir })],
         timeoutMs: BOOTSTRAP_TIMEOUT_MS,
       },
       config.correlation
@@ -97,7 +126,8 @@ export async function buildVercelBaseSnapshot(
       snapshot_id: snapshot.snapshot.id,
       sandbox_name: sandboxName,
       session_id: sessionId,
-      runtime_repo_ref: runtimeRepoRef,
+      runtime_source: "local-checkout",
+      runtime_source_ref: runtimeSourceRef,
     });
 
     return {
@@ -131,4 +161,8 @@ export function buildBaseSnapshotSandboxName(params: {
     .replace(/^-|-$/g, "");
 
   return normalized.slice(0, 96) || `${DEFAULT_BASE_SNAPSHOT_NAME_PREFIX}-${params.now}`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }

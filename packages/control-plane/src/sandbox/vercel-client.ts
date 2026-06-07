@@ -69,6 +69,12 @@ export interface VercelRunCommandRequest {
   timeoutMs?: number;
 }
 
+export interface VercelWriteFileArchiveRequest {
+  sessionId: string;
+  archive: Uint8Array;
+  extractDir: string;
+}
+
 export interface VercelCommandResult {
   commandId: string;
   exitCode: number | null;
@@ -175,6 +181,25 @@ export class VercelSandboxClient {
       },
       correlation,
       "runCommandAndWait"
+    );
+  }
+
+  async writeFileArchive(
+    request: VercelWriteFileArchiveRequest,
+    correlation?: CorrelationContext
+  ): Promise<void> {
+    await this.requestText(
+      `/v2/sandboxes/sessions/${encodeURIComponent(request.sessionId)}/fs/write`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/gzip",
+          "x-cwd": request.extractDir,
+        },
+        body: request.archive,
+      },
+      correlation,
+      "writeFileArchive"
     );
   }
 

@@ -78,10 +78,8 @@ daytona_base_snapshot = ""     # Name of the seeded Daytona snapshot
 vercel_sandbox_token      = ""
 vercel_sandbox_project_id = "" # e.g., "prj_xxxxxxxxxxxxxxxxxxxx"
 # vercel_sandbox_team_id  = "" # Optional team ID, e.g., "team_xxxxxxxxxxxxxxxxxxxx"
-# vercel_base_snapshot_id = "" # Optional manual fallback; GitHub Actions normally generates this for Vercel applies
+# vercel_base_snapshot_id = "" # Required for local Vercel applies; GitHub Actions normally generates this
 # vercel_sandbox_runtime  = "node24"
-# vercel_runtime_repo_url = "https://github.com/ColeMurray/background-agents.git"
-# vercel_runtime_repo_ref = "main"
 # vercel_snapshot_expiration_ms = 0
 
 # =============================================================================

@@ -21,10 +21,9 @@ vercel_sandbox_token      = "..."
 vercel_sandbox_project_id = "prj_..."
 # vercel_sandbox_team_id  = "team_..." # optional for team projects
 
-# Optional runtime settings
+# Snapshot/runtime settings
+# vercel_base_snapshot_id     = "snapshot_..." # required for local applies; CI generates this
 # vercel_sandbox_runtime        = "node24"
-# vercel_runtime_repo_url       = "https://github.com/ColeMurray/background-agents.git"
-# vercel_runtime_repo_ref       = "main"
 # vercel_snapshot_expiration_ms = 0
 ```
 
@@ -41,8 +40,6 @@ Optional GitHub Actions runtime settings:
 
 ```text
 VERCEL_SANDBOX_RUNTIME=node24
-VERCEL_RUNTIME_REPO_URL=https://github.com/ColeMurray/background-agents.git
-VERCEL_RUNTIME_REPO_REF=main
 VERCEL_SNAPSHOT_EXPIRATION_MS=0
 ```
 
@@ -59,8 +56,8 @@ When the Terraform GitHub Actions apply job runs with `SANDBOX_PROVIDER=vercel`,
 base-runtime snapshot before `terraform apply`:
 
 1. Create a temporary Vercel sandbox.
-2. Run the Open-Inspect runtime bootstrap script inside that sandbox.
-3. Clone `VERCEL_RUNTIME_REPO_URL` at `VERCEL_RUNTIME_REPO_REF`.
+2. Archive the checked-out `packages/sandbox-runtime` package from the GitHub Actions workspace.
+3. Upload that archive into the temporary sandbox.
 4. Install the sandbox runtime, OpenCode, code-server, ttyd, browser tooling, and credential helper.
 5. Snapshot the prepared filesystem.
 6. Stop the temporary sandbox.
@@ -70,21 +67,8 @@ The deployed control plane receives that value as `VERCEL_BASE_SNAPSHOT_ID`. Fre
 start from this snapshot, so they do not need to reinstall the base runtime every time.
 
 `vercel_base_snapshot_id` still exists as a manual fallback for local Terraform applies or emergency
-pinning, but the normal CI path should generate it.
-
-## Runtime Source
-
-The runtime source is intentionally a repository/ref pair rather than files uploaded from the local
-Terraform checkout. By default it uses:
-
-```text
-https://github.com/ColeMurray/background-agents.git
-main
-```
-
-This keeps the public deploy path simple and makes the base snapshot reproducible from a Git ref. If
-you need a private fork or pinned release branch, set `VERCEL_RUNTIME_REPO_URL` and
-`VERCEL_RUNTIME_REPO_REF` in GitHub Actions secrets before running Terraform apply.
+pinning, but the normal CI path should generate it. Vercel fresh sessions require either a repo
+image snapshot or this managed base-runtime snapshot.
 
 ## Session Startup Sources
 
@@ -92,7 +76,6 @@ Vercel sessions choose their source in this order:
 
 1. Repo image snapshot, when a repo-specific prebuild exists.
 2. Managed base-runtime snapshot from `VERCEL_BASE_SNAPSHOT_ID`.
-3. Fresh Vercel sandbox followed by runtime bootstrap, if no snapshot is configured.
 
 Repo image snapshots still take precedence over the base runtime snapshot because they contain both
 the base runtime and repository-specific setup work.

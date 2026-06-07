@@ -232,36 +232,17 @@ describe("VercelSandboxProvider", () => {
     });
   });
 
-  it("bootstraps the runtime when no source snapshot is available", async () => {
+  it("requires a base snapshot when no repo image snapshot is available", async () => {
     const client = createMockClient();
     const provider = new VercelSandboxProvider(client, {
       ...providerConfig,
       baseSnapshotId: undefined,
-      runtimeRepoUrl: "https://github.com/example/runtime.git",
-      runtimeRepoRef: "release",
     });
 
-    await provider.createSandbox(baseCreateConfig);
-
-    const bootstrapScript = vi.mocked(client.runCommandAndWait).mock.calls[0][0].args?.[1] ?? "";
-    expect(vi.mocked(client.runCommandAndWait)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: "vercel-session-1",
-        command: "bash",
-        args: ["-lc", expect.stringContaining("RUNTIME_REPO_REF='release'")],
-      }),
-      undefined
-    );
-    expect(bootstrapScript).toContain(
-      "sudo dnf install -y dnf-plugins-core git gcc gcc-c++ make ca-certificates openssh-clients jq unzip tar gzip python3.12 python3.12-pip python3.12-devel"
-    );
-    expect(bootstrapScript).toContain("sudo dnf install -y ffmpeg || true");
-    expect(bootstrapScript).toContain("sudo ln -sf /usr/bin/python3.12 /usr/local/bin/python");
-    expect(bootstrapScript).toContain("sudo /usr/bin/python3.12 -m ensurepip --upgrade");
-    expect(bootstrapScript).toContain(
-      'exec /usr/bin/python3.12 -m sandbox_runtime.credentials.git_credential_helper "$@"'
-    );
-    expect(bootstrapScript).not.toContain("exec ${VERCEL_PYTHON_BIN}");
+    await expect(provider.createSandbox(baseCreateConfig)).rejects.toMatchObject({
+      message: expect.stringContaining("VERCEL_BASE_SNAPSHOT_ID is required"),
+    });
+    expect(vi.mocked(client.createSandbox)).not.toHaveBeenCalled();
   });
 
   it("uses the configured Vercel runtime when composing PATH", async () => {

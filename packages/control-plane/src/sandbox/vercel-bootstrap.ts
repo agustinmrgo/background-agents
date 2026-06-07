@@ -1,26 +1,20 @@
 /**
  * Shared Vercel Sandbox runtime bootstrap script.
  *
- * Used both by live fresh sandboxes when no source snapshot is configured and
- * by CI when building the managed Vercel base-runtime snapshot.
+ * Used by CI when building the managed Vercel base-runtime snapshot.
  */
 
 export const VERCEL_PYTHON_BIN = "/usr/bin/python3.12";
 export const DEFAULT_VERCEL_RUNTIME = "node24";
-export const DEFAULT_VERCEL_RUNTIME_REPO_URL =
-  "https://github.com/ColeMurray/background-agents.git";
-export const DEFAULT_VERCEL_RUNTIME_REPO_REF = "main";
+export const VERCEL_RUNTIME_WORKDIR = "/tmp/open-inspect-runtime";
+export const VERCEL_LOCAL_RUNTIME_EXTRACT_DIR = `${VERCEL_RUNTIME_WORKDIR}/packages`;
 
-export function buildVercelBootstrapScript(params: {
-  runtimeRepoUrl: string;
-  runtimeRepoRef: string;
-}): string {
+export function buildVercelBootstrapScript(params: { runtimeExtractDir?: string } = {}): string {
   const gitCredentialHelperCommand = `exec ${VERCEL_PYTHON_BIN} -m sandbox_runtime.credentials.git_credential_helper "$@"`;
+  const runtimeExtractDir = params.runtimeExtractDir || VERCEL_LOCAL_RUNTIME_EXTRACT_DIR;
   return `
 set -euo pipefail
 
-RUNTIME_REPO_URL=${shellQuote(params.runtimeRepoUrl)}
-RUNTIME_REPO_REF=${shellQuote(params.runtimeRepoRef)}
 OPENCODE_VERSION="1.14.41"
 CODE_SERVER_VERSION="4.109.5"
 AGENT_BROWSER_VERSION="0.21.2"
@@ -60,11 +54,10 @@ if ! command -v ttyd >/dev/null 2>&1; then
   sudo chmod 0755 /usr/local/bin/ttyd
 fi
 
-rm -rf /tmp/open-inspect-runtime
-git clone --depth 1 "$RUNTIME_REPO_URL" /tmp/open-inspect-runtime
-cd /tmp/open-inspect-runtime
-git fetch --depth 1 origin "$RUNTIME_REPO_REF" || true
-git checkout --detach FETCH_HEAD 2>/dev/null || git checkout "$RUNTIME_REPO_REF"
+test -d ${shellQuote(runtimeExtractDir)}
+cd ${shellQuote(VERCEL_RUNTIME_WORKDIR)}
+test -f packages/sandbox-runtime/pyproject.toml
+test -d packages/sandbox-runtime/src/sandbox_runtime
 
 sudo rm -rf /app/sandbox_runtime
 sudo cp -a packages/sandbox-runtime/src/sandbox_runtime /app/sandbox_runtime
