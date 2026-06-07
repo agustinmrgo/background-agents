@@ -10,6 +10,7 @@ import type * as VercelClientModule from "../sandbox/vercel-client";
 const vercelClient = vi.hoisted(() => ({
   snapshotSession: vi.fn(),
   deleteSnapshot: vi.fn(),
+  stopSession: vi.fn(),
 }));
 
 const VERCEL_CALLBACK_TOKEN = "a".repeat(64);
@@ -146,6 +147,7 @@ describe("repo image routes", () => {
         timeout: 1800000,
       },
     });
+    vercelClient.stopSession.mockResolvedValue(undefined);
   });
 
   it("snapshots Vercel repo image builds outside the build sandbox before marking ready", async () => {
@@ -198,6 +200,14 @@ describe("repo image routes", () => {
     expect(vercelClient.snapshotSession).toHaveBeenCalledWith(
       "vercel-session-1",
       { expirationMs: 0 },
+      expect.objectContaining({
+        request_id: "request-1",
+        trace_id: "trace-1",
+        sandbox_id: "vercel-session-1",
+      })
+    );
+    expect(vercelClient.stopSession).toHaveBeenCalledWith(
+      "vercel-session-1",
       expect.objectContaining({
         request_id: "request-1",
         trace_id: "trace-1",

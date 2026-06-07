@@ -133,6 +133,21 @@ Resolution:
 - Added full-router regression coverage for unauthenticated Modal callbacks with malformed bodies
   and malformed Vercel callback bearer tokens.
 
+### Vercel Repo-Image Build Session Shutdown
+
+After a Vercel repo-image build reported success, the control plane snapshotted the completed build
+session but did not explicitly stop that build sandbox. The runtime waits after reporting success so
+the control plane can snapshot it, which meant successful build sandboxes could remain running until
+their Vercel timeout.
+
+Resolution:
+
+- Stopped the bound Vercel build session in the control-plane completion path after snapshot
+  handling finishes.
+- Kept stop failures non-fatal but logged with the build ID and provider session ID.
+- Added route-level unit coverage that verifies a successful Vercel repo-image completion snapshots
+  and stops the build session.
+
 ## Open Findings
 
 ### Repo Image Route Owns Provider Orchestration

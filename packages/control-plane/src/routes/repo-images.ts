@@ -381,6 +381,7 @@ async function completeVercelBuildFromSession(
 
   const snapshotStart = Date.now();
   const store = new RepoImageStore(env.DB);
+  let vercelProvider: ReturnType<typeof createConfiguredVercelProvider> | null = null;
 
   try {
     logger.info("repo_image.vercel_snapshot_start", {
@@ -390,7 +391,8 @@ async function completeVercelBuildFromSession(
       trace_id: params.traceId,
     });
 
-    const snapshot = await createConfiguredVercelProvider(env).takeSnapshot({
+    vercelProvider = createConfiguredVercelProvider(env);
+    const snapshot = await vercelProvider.takeSnapshot({
       providerObjectId: params.providerSessionId,
       sessionId: params.buildId,
       reason: "repo_image_build",
@@ -447,7 +449,7 @@ async function completeVercelBuildFromSession(
 
     if (result.replacedImageId) {
       try {
-        await createConfiguredVercelProvider(env).deleteProviderImage(result.replacedImageId);
+        await vercelProvider.deleteProviderImage(result.replacedImageId);
       } catch (e) {
         logger.warn("repo_image.delete_old_failed", {
           provider_image_id: result.replacedImageId,
@@ -475,6 +477,38 @@ async function completeVercelBuildFromSession(
       request_id: params.requestId,
       trace_id: params.traceId,
     });
+  } finally {
+    if (vercelProvider) {
+      try {
+        const stopResult = await vercelProvider.stopSandbox({
+          providerObjectId: params.providerSessionId,
+          sessionId: params.buildId,
+          reason: "repo_image_build_complete",
+          correlation: {
+            request_id: params.requestId,
+            trace_id: params.traceId,
+            sandbox_id: params.providerSessionId,
+          },
+        });
+        if (!stopResult.success) {
+          logger.warn("repo_image.vercel_build_stop_failed", {
+            build_id: params.buildId,
+            provider_session_id: params.providerSessionId,
+            error: stopResult.error,
+            request_id: params.requestId,
+            trace_id: params.traceId,
+          });
+        }
+      } catch (stopError) {
+        logger.warn("repo_image.vercel_build_stop_failed", {
+          build_id: params.buildId,
+          provider_session_id: params.providerSessionId,
+          error: stopError instanceof Error ? stopError.message : String(stopError),
+          request_id: params.requestId,
+          trace_id: params.traceId,
+        });
+      }
+    }
   }
 }
 

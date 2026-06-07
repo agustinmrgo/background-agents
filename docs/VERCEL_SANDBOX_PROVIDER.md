@@ -112,6 +112,8 @@ the repo image.
 Vercel sandboxes are explicitly stopped by Open-Inspect when they should no longer run:
 
 - The temporary base-snapshot build sandbox is stopped after its snapshot is created.
+- A Vercel repo-image build sandbox is stopped after the control plane snapshots the completed build
+  session.
 - Inactive Vercel sessions are snapshotted and stopped by the lifecycle manager.
 - Runtime-created snapshots use `VERCEL_SNAPSHOT_EXPIRATION_MS`; the base runtime snapshot does not
   expire by default.
