@@ -384,7 +384,7 @@ describe("VercelSandboxProvider", () => {
     expect(result).toEqual({ success: false, error: "Snapshot status was failed" });
   });
 
-  it("triggers a repo image build sandbox and launches the build coordinator", async () => {
+  it("triggers a repo image build sandbox and launches entrypoint with callback metadata", async () => {
     const client = createMockClient();
     const provider = new VercelSandboxProvider(client, providerConfig);
 
@@ -394,7 +394,10 @@ describe("VercelSandboxProvider", () => {
       repoName: "testrepo",
       defaultBranch: "main",
       callbackUrl: "https://control-plane.test/repo-images/build-complete",
-      userEnvVars: { USER_SECRET: "value" },
+      userEnvVars: {
+        USER_SECRET: "value",
+        OI_REPO_IMAGE_CALLBACK_SECRET: "user-controlled",
+      },
       cloneToken: "clone-token",
     });
 
@@ -426,28 +429,23 @@ describe("VercelSandboxProvider", () => {
     expect(createCall.env).not.toHaveProperty("OI_INTERNAL_CALLBACK_SECRET");
     expect(createCall.env).not.toHaveProperty("OI_VERCEL_TOKEN");
     expect(createCall.env).not.toHaveProperty("OI_VERCEL_CALLBACK_URL");
+    expect(createCall.env).not.toHaveProperty("OI_REPO_IMAGE_CALLBACK_SECRET");
+    expect(createCall.env).not.toHaveProperty("OI_REPO_IMAGE_CALLBACK_URL");
     expect(vi.mocked(client.startCommand)).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "vercel-session-1",
-        command: "/usr/bin/python3.12",
-        args: ["-c", expect.stringContaining('"provider_session_id": config["session_id"]')],
+        command: "sudo",
+        args: ["-E", "/usr/bin/python3.12", "-m", "sandbox_runtime.entrypoint"],
         cwd: "/workspace",
         env: {
-          OI_VERCEL_SESSION_ID: "vercel-session-1",
-          OI_VERCEL_BUILD_ID: "build-123",
-          OI_VERCEL_CALLBACK_URL: "https://control-plane.test/repo-images/build-complete",
-          OI_INTERNAL_CALLBACK_SECRET: "callback-secret",
+          OI_REPO_IMAGE_PROVIDER_SESSION_ID: "vercel-session-1",
+          OI_REPO_IMAGE_BUILD_ID: "build-123",
+          OI_REPO_IMAGE_CALLBACK_URL: "https://control-plane.test/repo-images/build-complete",
+          OI_REPO_IMAGE_CALLBACK_SECRET: "callback-secret",
         },
       }),
       undefined
     );
-    const coordinatorScript = vi.mocked(client.startCommand).mock.calls[0][0].args?.[1] ?? "";
-    expect(coordinatorScript).toContain("COORDINATOR_ONLY_ENV_KEYS");
-    expect(coordinatorScript).toContain("build_env.pop(key, None)");
-    expect(coordinatorScript).toContain('"provider_session_id": config["session_id"]');
-    expect(coordinatorScript).toContain('"User-Agent": "open-inspect/vercel-build-coordinator"');
-    expect(coordinatorScript).not.toContain("def snapshot_session");
-    expect(coordinatorScript).not.toContain("OI_VERCEL_TOKEN");
     expect(result).toEqual({ buildId: "build-123", status: "building" });
   });
 

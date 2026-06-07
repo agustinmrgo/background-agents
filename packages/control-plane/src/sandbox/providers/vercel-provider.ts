@@ -38,6 +38,12 @@ const EXPECTED_TUNNEL_PORTS_ENV_VAR = "EXPECTED_TUNNEL_PORTS";
 const DEFAULT_SNAPSHOT_EXPIRATION_MS = 0;
 const BUILD_TIMEOUT_SECONDS = 1800;
 const VERCEL_TUNNEL_ENV_WRITE_TIMEOUT_MS = 30_000;
+const REPO_IMAGE_CALLBACK_ENV_KEYS = [
+  "OI_REPO_IMAGE_PROVIDER_SESSION_ID",
+  "OI_REPO_IMAGE_BUILD_ID",
+  "OI_REPO_IMAGE_CALLBACK_URL",
+  "OI_REPO_IMAGE_CALLBACK_SECRET",
+] as const;
 
 export interface VercelProviderConfig {
   scmProvider: SourceControlProviderName;
@@ -261,9 +267,9 @@ export class VercelSandboxProvider implements SandboxProvider {
         config.correlation
       );
 
-      const command = await this.launchBuildCoordinator(
+      const command = await this.launchEntrypoint(
         created.session.id,
-        this.buildCoordinatorEnv(config, created.session.id),
+        this.buildRepoImageCallbackEnv(config, created.session.id),
         config.correlation
       );
 
@@ -357,6 +363,10 @@ export class VercelSandboxProvider implements SandboxProvider {
     config: TriggerVercelRepoImageBuildConfig
   ): Promise<Record<string, string>> {
     const envVars: Record<string, string> = { ...(config.userEnvVars ?? {}) };
+    for (const key of REPO_IMAGE_CALLBACK_ENV_KEYS) {
+      delete envVars[key];
+    }
+
     Object.assign(envVars, {
       HOME: "/root",
       NODE_ENV: "development",
@@ -533,8 +543,8 @@ export class VercelSandboxProvider implements SandboxProvider {
     sessionId: string,
     env: Record<string, string>,
     correlation?: CreateSandboxConfig["correlation"]
-  ): Promise<void> {
-    await this.client.startCommand(
+  ): Promise<VercelCommandResult> {
+    return this.client.startCommand(
       {
         sessionId,
         command: "sudo",
@@ -546,32 +556,15 @@ export class VercelSandboxProvider implements SandboxProvider {
     );
   }
 
-  private async launchBuildCoordinator(
-    sessionId: string,
-    env: Record<string, string>,
-    correlation?: CreateSandboxConfig["correlation"]
-  ): Promise<VercelCommandResult> {
-    return this.client.startCommand(
-      {
-        sessionId,
-        command: VERCEL_PYTHON_BIN,
-        args: ["-c", buildCoordinatorScript()],
-        cwd: "/workspace",
-        env,
-      },
-      correlation
-    );
-  }
-
-  private buildCoordinatorEnv(
+  private buildRepoImageCallbackEnv(
     config: TriggerVercelRepoImageBuildConfig,
     sessionId: string
   ): Record<string, string> {
     return {
-      OI_VERCEL_SESSION_ID: sessionId,
-      OI_VERCEL_BUILD_ID: config.buildId,
-      OI_VERCEL_CALLBACK_URL: config.callbackUrl,
-      OI_INTERNAL_CALLBACK_SECRET: this.providerConfig.internalCallbackSecret ?? "",
+      [REPO_IMAGE_CALLBACK_ENV_KEYS[0]]: sessionId,
+      [REPO_IMAGE_CALLBACK_ENV_KEYS[1]]: config.buildId,
+      [REPO_IMAGE_CALLBACK_ENV_KEYS[2]]: config.callbackUrl,
+      [REPO_IMAGE_CALLBACK_ENV_KEYS[3]]: this.providerConfig.internalCallbackSecret ?? "",
     };
   }
 
@@ -643,164 +636,6 @@ function routeToUrl(route: VercelSandboxRoute | undefined): string | undefined {
 function buildVercelRuntimePath(runtime?: string): string {
   const resolvedRuntime = runtime || DEFAULT_VERCEL_RUNTIME;
   return `/root/.bun/bin:/usr/local/bin:/usr/bin:/bin:/vercel/runtimes/${resolvedRuntime}/bin`;
-}
-
-function buildCoordinatorScript(): string {
-  return String.raw`
-import hashlib
-import hmac
-import json
-import os
-import signal
-import subprocess
-import sys
-import time
-import urllib.error
-import urllib.request
-
-
-def read_coordinator_config():
-    return {
-        "build_id": os.environ.pop("OI_VERCEL_BUILD_ID"),
-        "callback_url": os.environ.pop("OI_VERCEL_CALLBACK_URL"),
-        "secret": os.environ.pop("OI_INTERNAL_CALLBACK_SECRET"),
-        "session_id": os.environ.pop("OI_VERCEL_SESSION_ID"),
-    }
-
-
-def callback(config, path_suffix, payload):
-    callback_url = config["callback_url"]
-    if path_suffix:
-        callback_url = callback_url.replace("/build-complete", path_suffix)
-    secret = config["secret"]
-    timestamp = str(int(time.time() * 1000))
-    signature = hmac.new(secret.encode(), timestamp.encode(), hashlib.sha256).hexdigest()
-    body = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        callback_url,
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {timestamp}.{signature}",
-            "Content-Type": "application/json",
-            "User-Agent": "open-inspect/vercel-build-coordinator",
-        },
-    )
-    last_error = ""
-    for attempt in range(1, 4):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                resp.read()
-                print(json.dumps({
-                    "event": "callback.complete",
-                    "path_suffix": path_suffix,
-                    "attempt": attempt,
-                    "status": resp.status,
-                }), flush=True)
-                return
-        except urllib.error.HTTPError as exc:
-            try:
-                details = exc.read().decode(errors="replace")
-            except Exception:
-                details = ""
-            last_error = f"HTTP {exc.code}: {details[-500:]}"
-        except Exception as exc:
-            last_error = str(exc)
-        print(json.dumps({
-            "event": "callback.failed",
-            "path_suffix": path_suffix,
-            "attempt": attempt,
-            "error": last_error[-500:],
-        }), flush=True)
-        if attempt < 3:
-            time.sleep(attempt * 2)
-    raise RuntimeError(f"callback failed after retries: {last_error[-500:]}")
-
-
-COORDINATOR_ONLY_ENV_KEYS = {
-    "OI_VERCEL_SESSION_ID",
-    "OI_VERCEL_BUILD_ID",
-    "OI_VERCEL_CALLBACK_URL",
-    "OI_INTERNAL_CALLBACK_SECRET",
-}
-
-
-def read_head_sha():
-    repo_name = os.environ.get("REPO_NAME", "")
-    if not repo_name:
-        return ""
-    try:
-        return subprocess.check_output(
-            ["git", "-C", f"/workspace/{repo_name}", "rev-parse", "HEAD"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-        ).strip()
-    except Exception:
-        return ""
-
-
-def main():
-    started = time.time()
-    config = read_coordinator_config()
-    build_id = config["build_id"]
-    head_sha = ""
-    last_error = ""
-    build_env = os.environ.copy()
-    for key in COORDINATOR_ONLY_ENV_KEYS:
-        build_env.pop(key, None)
-    proc = subprocess.Popen(
-        ["sudo", "-E", "/usr/bin/python3.12", "-m", "sandbox_runtime.entrypoint"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        env=build_env,
-    )
-    try:
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            print(line, end="", flush=True)
-            try:
-                entry = json.loads(line)
-            except Exception:
-                continue
-            event = entry.get("event")
-            if event == "git.sync_complete" and entry.get("head_sha"):
-                head_sha = entry["head_sha"]
-            elif event in {"setup.failed", "setup.timeout", "setup.error", "supervisor.error", "supervisor.fatal"}:
-                last_error = str(entry.get("output_tail") or entry.get("error_message") or entry.get("error") or event)[-500:]
-            elif event == "image_build.complete":
-                if not head_sha:
-                    head_sha = read_head_sha()
-                proc.send_signal(signal.SIGTERM)
-                try:
-                    proc.wait(timeout=20)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=10)
-                callback(config, "", {
-                    "build_id": build_id,
-                    "provider_session_id": config["session_id"],
-                    "base_sha": head_sha,
-                    "build_duration_seconds": round(time.time() - started, 3),
-                })
-                return
-        exit_code = proc.wait()
-        callback(config, "/build-failed", {
-            "build_id": build_id,
-            "error": last_error or f"build entrypoint exited before completion (exit_code={exit_code})",
-        })
-    except Exception as exc:
-        try:
-            callback(config, "/build-failed", {"build_id": build_id, "error": str(exc)[-500:]})
-        finally:
-            raise
-
-
-if __name__ == "__main__":
-    main()
-`;
 }
 
 export function createVercelProvider(
