@@ -39,12 +39,14 @@ VERCEL_SANDBOX_TEAM_ID # optional
 Optional GitHub Actions runtime settings:
 
 ```text
+VERCEL_BASE_SNAPSHOT_ID # optional manual override; skips Terraform-managed snapshot builds
 VERCEL_SANDBOX_RUNTIME=node24
 VERCEL_SNAPSHOT_EXPIRATION_MS=0
+VERCEL_SANDBOX_API_BASE_URL # optional advanced Sandbox API override
 ```
 
-`VERCEL_SANDBOX_API_BASE_URL` is also honored by Terraform and the control plane for advanced
-testing against a non-default Sandbox API endpoint. Normal deployments should leave it unset.
+`VERCEL_SANDBOX_API_BASE_URL` is honored by Terraform and the control plane for advanced testing
+against a non-default Sandbox API endpoint. Normal deployments should leave it unset.
 
 `VERCEL_SNAPSHOT_EXPIRATION_MS` applies to repo/session snapshots created at runtime. `0` means no
 expiration. The managed base-runtime snapshot is created without expiration, overriding Vercel's
@@ -66,8 +68,8 @@ builds a managed base-runtime snapshot from the local checkout:
 
 The deployed control plane resolves `VERCEL_BASE_SNAPSHOT_NAME` to the newest created Vercel
 snapshot with that sandbox name, then starts fresh Vercel sessions from that snapshot. This keeps
-fresh sessions from reinstalling the base runtime every time while avoiding a GitHub Actions-only
-snapshot build path.
+fresh sessions from reinstalling the base runtime every time while keeping snapshot creation inside
+the same Terraform apply path as the rest of the sandbox infrastructure.
 
 `vercel_base_snapshot_id` still exists as a manual fallback for local Terraform applies or emergency
 pinning. When it is set, Terraform skips the managed base snapshot build and the control plane uses
@@ -84,6 +86,26 @@ Vercel sessions choose their source in this order:
 
 Repo image snapshots still take precedence over the base runtime snapshot because they contain both
 the base runtime and repository-specific setup work.
+
+## Repo Image Build Callbacks
+
+Vercel repo-image builds run inside a Vercel sandbox rather than a trusted Modal shim. The control
+plane therefore does not pass `INTERNAL_CALLBACK_SECRET` into the build sandbox.
+
+When a Vercel repo-image build is triggered, the control plane:
+
+1. Generates a random callback token for that build only.
+2. Stores only a hash of that token in D1 with the build row.
+3. Creates the Vercel build sandbox and stores the expected Vercel session ID before launching the
+   runtime entrypoint.
+4. Passes the raw callback token, build ID, callback URL, and provider session ID to the runtime
+   entrypoint command.
+5. Consumes the token on the first success or failure callback, after verifying the build is still
+   `building` and the callback's provider session ID matches the stored Vercel session.
+
+On success, the runtime callback does not provide a provider image ID. It only reports that setup
+finished. The control plane then snapshots the bound Vercel session and records that snapshot ID as
+the repo image.
 
 ## Shutdown and Snapshots
 

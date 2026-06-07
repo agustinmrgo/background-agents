@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "@open-inspect/shared";
+
 export type RepoImageProvider = "modal" | "vercel";
 
 export interface RepoImageBuild {
@@ -6,6 +8,8 @@ export interface RepoImageBuild {
   repoName: string;
   provider: RepoImageProvider;
   baseBranch: string;
+  callbackTokenHash?: string;
+  callbackTokenExpiresAt?: number;
 }
 
 export interface RepoImage {
@@ -13,13 +17,23 @@ export interface RepoImage {
   repo_owner: string;
   repo_name: string;
   provider: RepoImageProvider;
+  provider_session_id: string | null;
   provider_image_id: string;
   base_sha: string;
   base_branch: string;
   status: "building" | "ready" | "failed";
   build_duration_seconds: number | null;
   error_message: string | null;
+  callback_token_hash: string | null;
+  callback_token_expires_at: number | null;
+  callback_token_used_at: number | null;
   created_at: number;
+}
+
+export interface RepoImageCallbackBuild {
+  id: string;
+  provider: RepoImageProvider;
+  provider_session_id: string | null;
 }
 
 export class RepoImageStore {
@@ -29,8 +43,20 @@ export class RepoImageStore {
     const now = Date.now();
     await this.db
       .prepare(
-        `INSERT INTO repo_images (id, repo_owner, repo_name, provider, base_branch, provider_image_id, status, base_sha, created_at)
-         VALUES (?, ?, ?, ?, ?, '', 'building', '', ?)`
+        `INSERT INTO repo_images (
+           id,
+           repo_owner,
+           repo_name,
+           provider,
+           base_branch,
+           provider_image_id,
+           status,
+           base_sha,
+           callback_token_hash,
+           callback_token_expires_at,
+           created_at
+         )
+         VALUES (?, ?, ?, ?, ?, '', 'building', '', ?, ?, ?)`
       )
       .bind(
         build.id,
@@ -38,20 +64,89 @@ export class RepoImageStore {
         build.repoName.toLowerCase(),
         build.provider,
         build.baseBranch,
+        build.callbackTokenHash ?? null,
+        build.callbackTokenExpiresAt ?? null,
         now
       )
       .run();
   }
 
+  async bindProviderSession(
+    buildId: string,
+    provider: RepoImageProvider,
+    providerSessionId: string
+  ): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        "UPDATE repo_images SET provider_session_id = ? WHERE id = ? AND provider = ? AND status = 'building'"
+      )
+      .bind(providerSessionId, buildId, provider)
+      .run();
+
+    return (result.meta?.changes ?? 0) > 0;
+  }
+
+  async consumeCallbackToken(params: {
+    buildId: string;
+    provider: RepoImageProvider;
+    tokenHash: string;
+    providerSessionId?: string;
+    now: number;
+  }): Promise<RepoImageCallbackBuild | null> {
+    const build = await this.db
+      .prepare(
+        `SELECT id, provider, provider_session_id, status, callback_token_hash, callback_token_expires_at, callback_token_used_at
+         FROM repo_images WHERE id = ? AND provider = ?`
+      )
+      .bind(params.buildId, params.provider)
+      .first<{
+        id: string;
+        provider: RepoImageProvider;
+        provider_session_id: string | null;
+        status: RepoImage["status"];
+        callback_token_hash: string | null;
+        callback_token_expires_at: number | null;
+        callback_token_used_at: number | null;
+      }>();
+
+    if (!build || build.status !== "building") return null;
+    if (!build.callback_token_hash || !build.callback_token_expires_at) return null;
+    if (build.callback_token_used_at !== null) return null;
+    if (build.callback_token_expires_at < params.now) return null;
+    if (!timingSafeEqual(build.callback_token_hash, params.tokenHash)) return null;
+    if (params.providerSessionId && build.provider_session_id !== params.providerSessionId) {
+      return null;
+    }
+
+    const result = await this.db
+      .prepare(
+        `UPDATE repo_images SET callback_token_used_at = ?
+         WHERE id = ? AND provider = ? AND status = 'building' AND callback_token_hash = ? AND callback_token_used_at IS NULL`
+      )
+      .bind(params.now, params.buildId, params.provider, params.tokenHash)
+      .run();
+
+    if ((result.meta?.changes ?? 0) === 0) return null;
+
+    return {
+      id: build.id,
+      provider: build.provider,
+      provider_session_id: build.provider_session_id,
+    };
+  }
+
   async markReady(
     buildId: string,
+    provider: RepoImageProvider,
     providerImageId: string,
     baseSha: string,
     buildDurationSeconds: number
-  ): Promise<{ replacedImageId: string | null }> {
+  ): Promise<{ updated: boolean; replacedImageId: string | null }> {
     const build = await this.db
-      .prepare("SELECT repo_owner, repo_name, provider, base_branch FROM repo_images WHERE id = ?")
-      .bind(buildId)
+      .prepare(
+        "SELECT repo_owner, repo_name, provider, base_branch FROM repo_images WHERE id = ? AND provider = ? AND status = 'building'"
+      )
+      .bind(buildId, provider)
       .first<{
         repo_owner: string;
         repo_name: string;
@@ -59,7 +154,7 @@ export class RepoImageStore {
         base_branch: string;
       }>();
 
-    if (!build) return { replacedImageId: null };
+    if (!build) return { updated: false, replacedImageId: null };
 
     const oldReady = await this.db
       .prepare(
@@ -71,9 +166,9 @@ export class RepoImageStore {
     const statements: D1PreparedStatement[] = [
       this.db
         .prepare(
-          "UPDATE repo_images SET status = 'ready', provider_image_id = ?, base_sha = ?, build_duration_seconds = ? WHERE id = ?"
+          "UPDATE repo_images SET status = 'ready', provider_image_id = ?, base_sha = ?, build_duration_seconds = ? WHERE id = ? AND provider = ? AND status = 'building'"
         )
-        .bind(providerImageId, baseSha, buildDurationSeconds, buildId),
+        .bind(providerImageId, baseSha, buildDurationSeconds, buildId, provider),
     ];
 
     if (oldReady) {
@@ -82,14 +177,18 @@ export class RepoImageStore {
 
     await this.db.batch(statements);
 
-    return { replacedImageId: oldReady?.provider_image_id ?? null };
+    return { updated: true, replacedImageId: oldReady?.provider_image_id ?? null };
   }
 
-  async markFailed(buildId: string, error: string): Promise<void> {
-    await this.db
-      .prepare("UPDATE repo_images SET status = 'failed', error_message = ? WHERE id = ?")
-      .bind(error, buildId)
+  async markFailed(buildId: string, provider: RepoImageProvider, error: string): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        "UPDATE repo_images SET status = 'failed', error_message = ? WHERE id = ? AND provider = ? AND status = 'building'"
+      )
+      .bind(error, buildId, provider)
       .run();
+
+    return (result.meta?.changes ?? 0) > 0;
   }
 
   async getLatestReady(

@@ -200,12 +200,12 @@ service is deployed. Vercel supports filesystem snapshots and repo prebuilt imag
 reusable base snapshot, set `vercel_base_snapshot_id` to use it instead of Terraform's managed base
 snapshot build.
 
-When Terraform runs with `SANDBOX_PROVIDER=vercel`, it builds a managed immutable Vercel
-base-runtime snapshot from the checked-out `packages/sandbox-runtime` source and passes a
-deterministic snapshot name into the Worker deployment. The control plane resolves that name to the
-latest created Vercel snapshot at sandbox creation time. The `vercel_base_snapshot_id` setting is
-still available as a manual override. See [Vercel Sandbox Provider](VERCEL_SANDBOX_PROVIDER.md) for
-the full runtime, snapshot, and resource configuration model.
+When Terraform runs with `sandbox_provider = "vercel"`, it builds a managed immutable Vercel
+base-runtime snapshot from the checked-out sandbox runtime and Vercel bootstrap source, then passes
+a deterministic snapshot name into the Worker deployment. The control plane resolves that name to
+the latest created Vercel snapshot at sandbox creation time. The `vercel_base_snapshot_id` setting
+is still available as a manual override. See [Vercel Sandbox Provider](VERCEL_SANDBOX_PROVIDER.md)
+for the full runtime, snapshot, and resource configuration model.
 
 > **Important**: Unlike Modal, the Vercel provider does not automatically inject LLM API keys into
 > sandboxes. If you plan to use Claude models, add `ANTHROPIC_API_KEY` as a **global secret** in

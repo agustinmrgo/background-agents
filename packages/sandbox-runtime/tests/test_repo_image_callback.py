@@ -6,7 +6,7 @@ import pytest
 
 from sandbox_runtime.repo_image_callback import (
     BUILD_ID_ENV,
-    CALLBACK_SECRET_ENV,
+    CALLBACK_TOKEN_ENV,
     CALLBACK_URL_ENV,
     CALLBACK_USER_AGENT,
     RepoImageBuildCallback,
@@ -17,7 +17,7 @@ from sandbox_runtime.repo_image_callback import (
 def test_from_env_returns_none_when_unconfigured(monkeypatch):
     monkeypatch.delenv(BUILD_ID_ENV, raising=False)
     monkeypatch.delenv(CALLBACK_URL_ENV, raising=False)
-    monkeypatch.delenv(CALLBACK_SECRET_ENV, raising=False)
+    monkeypatch.delenv(CALLBACK_TOKEN_ENV, raising=False)
 
     assert RepoImageBuildCallback.from_env() is None
 
@@ -26,7 +26,7 @@ def test_from_env_rejects_partial_configuration(monkeypatch):
     logger = MagicMock()
     monkeypatch.setenv(BUILD_ID_ENV, "build-1")
     monkeypatch.delenv(CALLBACK_URL_ENV, raising=False)
-    monkeypatch.setenv(CALLBACK_SECRET_ENV, "secret")
+    monkeypatch.setenv(CALLBACK_TOKEN_ENV, "callback-token")
 
     assert RepoImageBuildCallback.from_env(logger) is None
     logger.error.assert_called_once()
@@ -56,7 +56,7 @@ async def test_report_success_posts_authenticated_payload(monkeypatch):
     reporter = RepoImageBuildCallback(
         build_id="build-1",
         callback_url="https://cp.test/repo-images/build-complete",
-        secret="secret",
+        token="callback-token",
         provider_session_id="vercel-session-1",
         logger=MagicMock(),
     )
@@ -66,7 +66,7 @@ async def test_report_success_posts_authenticated_payload(monkeypatch):
     assert len(requests) == 1
     request = requests[0]
     assert str(request.url) == "https://cp.test/repo-images/build-complete"
-    assert request.headers["authorization"].startswith("Bearer ")
+    assert request.headers["authorization"] == "Bearer callback-token"
     assert request.headers["user-agent"] == CALLBACK_USER_AGENT
     assert request.headers["content-type"] == "application/json"
     assert json.loads(request.content) == {
@@ -89,7 +89,8 @@ async def test_report_failure_posts_to_failed_endpoint_and_truncates_error(monke
     reporter = RepoImageBuildCallback(
         build_id="build-1",
         callback_url="https://cp.test/repo-images/build-complete",
-        secret="secret",
+        token="callback-token",
+        provider_session_id="vercel-session-1",
         logger=MagicMock(),
     )
 
@@ -99,6 +100,7 @@ async def test_report_failure_posts_to_failed_endpoint_and_truncates_error(monke
     assert json.loads(requests[0].content) == {
         "build_id": "build-1",
         "error": "x" * 500,
+        "provider_session_id": "vercel-session-1",
     }
 
 
@@ -118,7 +120,7 @@ async def test_retries_transient_callback_failures(monkeypatch):
     reporter = RepoImageBuildCallback(
         build_id="build-1",
         callback_url="https://cp.test/repo-images/build-complete",
-        secret="secret",
+        token="callback-token",
         logger=MagicMock(),
     )
 

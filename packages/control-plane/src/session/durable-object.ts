@@ -614,7 +614,6 @@ export class SessionDO extends DurableObject<Env> {
           runtime: this.env.VERCEL_RUNTIME,
           snapshotExpirationMs: parseInt(this.env.VERCEL_SNAPSHOT_EXPIRATION_MS || "0", 10),
           codeServerPasswordSecret: this.env.VERCEL_TOKEN,
-          internalCallbackSecret: this.env.INTERNAL_CALLBACK_SECRET,
         });
       }
 

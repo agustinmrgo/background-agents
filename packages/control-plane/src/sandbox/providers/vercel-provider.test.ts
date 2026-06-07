@@ -4,7 +4,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { VercelSandboxProvider, type VercelProviderConfig } from "./vercel-provider";
-import { SandboxProviderError, type CreateSandboxConfig, type RestoreConfig } from "../provider";
+import type { CreateSandboxConfig, RestoreConfig } from "../provider";
 import type {
   VercelCreateSandboxRequest,
   VercelCreateSandboxResponse,
@@ -87,7 +87,6 @@ function createMockClient(
 const providerConfig: VercelProviderConfig = {
   scmProvider: "github",
   codeServerPasswordSecret: "code-secret",
-  internalCallbackSecret: "callback-secret",
   token: "vercel-token",
   teamId: "team-123",
   apiBaseUrl: "https://vercel.test/api",
@@ -394,9 +393,11 @@ describe("VercelSandboxProvider", () => {
       repoName: "testrepo",
       defaultBranch: "main",
       callbackUrl: "https://control-plane.test/repo-images/build-complete",
+      callbackToken: "callback-token",
       userEnvVars: {
         USER_SECRET: "value",
-        OI_REPO_IMAGE_CALLBACK_SECRET: "user-controlled",
+        OI_REPO_IMAGE_CALLBACK_TOKEN: "user-controlled",
+        OI_REPO_IMAGE_CALLBACK_SECRET: "legacy-user-controlled",
       },
       cloneToken: "clone-token",
     });
@@ -429,6 +430,7 @@ describe("VercelSandboxProvider", () => {
     expect(createCall.env).not.toHaveProperty("OI_INTERNAL_CALLBACK_SECRET");
     expect(createCall.env).not.toHaveProperty("OI_VERCEL_TOKEN");
     expect(createCall.env).not.toHaveProperty("OI_VERCEL_CALLBACK_URL");
+    expect(createCall.env).not.toHaveProperty("OI_REPO_IMAGE_CALLBACK_TOKEN");
     expect(createCall.env).not.toHaveProperty("OI_REPO_IMAGE_CALLBACK_SECRET");
     expect(createCall.env).not.toHaveProperty("OI_REPO_IMAGE_CALLBACK_URL");
     expect(vi.mocked(client.startCommand)).toHaveBeenCalledWith(
@@ -441,7 +443,7 @@ describe("VercelSandboxProvider", () => {
           OI_REPO_IMAGE_PROVIDER_SESSION_ID: "vercel-session-1",
           OI_REPO_IMAGE_BUILD_ID: "build-123",
           OI_REPO_IMAGE_CALLBACK_URL: "https://control-plane.test/repo-images/build-complete",
-          OI_REPO_IMAGE_CALLBACK_SECRET: "callback-secret",
+          OI_REPO_IMAGE_CALLBACK_TOKEN: "callback-token",
         },
       }),
       undefined
@@ -464,20 +466,24 @@ describe("VercelSandboxProvider", () => {
     ).rejects.toThrow("Failed to create Vercel sandbox");
   });
 
-  it("requires an internal callback secret for repo image builds", async () => {
-    const provider = new VercelSandboxProvider(createMockClient(), {
-      ...providerConfig,
-      internalCallbackSecret: undefined,
+  it("binds the provider session before launching the repo image callback entrypoint", async () => {
+    const client = createMockClient();
+    const provider = new VercelSandboxProvider(client, providerConfig);
+    const onProviderSessionCreated = vi.fn(async () => undefined);
+
+    await provider.triggerRepoImageBuild({
+      buildId: "build-123",
+      repoOwner: "testowner",
+      repoName: "testrepo",
+      defaultBranch: "main",
+      callbackUrl: "https://control-plane.test/repo-images/build-complete",
+      callbackToken: "callback-token",
+      onProviderSessionCreated,
     });
 
-    await expect(
-      provider.triggerRepoImageBuild({
-        buildId: "build-123",
-        repoOwner: "testowner",
-        repoName: "testrepo",
-        defaultBranch: "main",
-        callbackUrl: "https://control-plane.test/repo-images/build-complete",
-      })
-    ).rejects.toThrow(SandboxProviderError);
+    expect(onProviderSessionCreated).toHaveBeenCalledWith("vercel-session-1");
+    expect(onProviderSessionCreated.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(client.startCommand).mock.invocationCallOrder[0]
+    );
   });
 });

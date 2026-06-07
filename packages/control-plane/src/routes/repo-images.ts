@@ -8,6 +8,7 @@
  * - Maintenance operations (stale builds, cleanup)
  */
 
+import { computeHmacHex } from "@open-inspect/shared";
 import { RepoImageStore } from "../db/repo-images";
 import { verifyInternalToken } from "../auth/internal";
 import { RepoMetadataStore } from "../db/repo-metadata";
@@ -34,6 +35,7 @@ import {
 } from "./shared";
 
 const logger = createLogger("router:repo-images");
+const VERCEL_CALLBACK_TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
 
 function requireRepoImages(env: Env): Response | null {
   if (supportsRepoImageBackend(env.SANDBOX_PROVIDER)) {
@@ -102,13 +104,86 @@ function createConfiguredVercelProvider(env: Env) {
     runtime: env.VERCEL_RUNTIME,
     snapshotExpirationMs: parseInt(env.VERCEL_SNAPSHOT_EXPIRATION_MS || "0", 10),
     codeServerPasswordSecret: env.VERCEL_TOKEN,
-    internalCallbackSecret: env.INTERNAL_CALLBACK_SECRET,
   });
+}
+
+function generateRepoImageCallbackToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hashRepoImageCallbackToken(token: string, env: Env): Promise<string> {
+  if (!env.INTERNAL_CALLBACK_SECRET) {
+    throw new Error("INTERNAL_CALLBACK_SECRET is required for repo image callback hashing");
+  }
+  return computeHmacHex(`repo-image-callback:${token}`, env.INTERNAL_CALLBACK_SECRET);
+}
+
+function getBearerToken(request: Request): string | null {
+  const authHeader = request.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
+async function requireVercelBuildCallbackAuth(
+  request: Request,
+  env: Env,
+  store: RepoImageStore,
+  params: { buildId: string; providerSessionId: string },
+  ctx: RequestContext
+): Promise<Response | null> {
+  const token = getBearerToken(request);
+  if (!token) {
+    logger.warn("repo_image.callback_auth_failed", {
+      build_id: params.buildId,
+      provider_session_id: params.providerSessionId,
+      request_id: ctx.request_id,
+      trace_id: ctx.trace_id,
+    });
+    return error("Unauthorized", 401);
+  }
+
+  let tokenHash: string;
+  try {
+    tokenHash = await hashRepoImageCallbackToken(token, env);
+  } catch (e) {
+    logger.error("repo_image.callback_auth_misconfigured", {
+      build_id: params.buildId,
+      error: e instanceof Error ? e.message : String(e),
+      request_id: ctx.request_id,
+      trace_id: ctx.trace_id,
+    });
+    return error("Internal authentication not configured", 500);
+  }
+
+  const build = await store.consumeCallbackToken({
+    buildId: params.buildId,
+    provider: "vercel",
+    providerSessionId: params.providerSessionId,
+    tokenHash,
+    now: Date.now(),
+  });
+
+  if (!build) {
+    logger.warn("repo_image.callback_auth_failed", {
+      build_id: params.buildId,
+      provider_session_id: params.providerSessionId,
+      request_id: ctx.request_id,
+      trace_id: ctx.trace_id,
+    });
+    return error("Unauthorized", 401);
+  }
+
+  return null;
 }
 
 /**
  * POST /repo-images/build-complete
- * Callback from Modal async builder on success.
+ * Callback from repo image builders on success.
  */
 async function handleBuildComplete(
   request: Request,
@@ -122,9 +197,6 @@ async function handleBuildComplete(
   if (!env.DB) {
     return error("Database not configured", 503);
   }
-
-  const authError = await requireBuildCallbackAuth(request, env, ctx);
-  if (authError) return authError;
 
   const body = await parseJsonBody<{
     build_id?: string;
@@ -145,46 +217,67 @@ async function handleBuildComplete(
     return error("build_id is required", 400);
   }
 
-  if (!providerImageId) {
-    if (getRepoImageBackend(env) === "vercel" && providerSessionId) {
-      logger.info("repo_image.build_complete_received", {
-        build_id: buildId,
-        provider_session_id: providerSessionId,
-        base_sha: baseSha,
-        request_id: ctx.request_id,
-        trace_id: ctx.trace_id,
-      });
+  const backend = getRepoImageBackend(env);
+  const store = new RepoImageStore(env.DB);
 
-      const completion = completeVercelBuildFromSession(env, {
-        buildId,
-        providerSessionId,
-        baseSha: baseSha || "",
-        buildDurationSeconds: buildDurationSeconds ?? 0,
-        requestId: ctx.request_id,
-        traceId: ctx.trace_id,
-      });
-
-      if (ctx.executionCtx) {
-        ctx.executionCtx.waitUntil(completion);
-      } else {
-        await completion;
-      }
-
-      return json({ ok: true, snapshotPending: true });
+  if (backend === "vercel") {
+    if (!providerSessionId) {
+      return error("provider_session_id is required", 400);
     }
 
-    return error("provider_image_id is required", 400);
+    const authError = await requireVercelBuildCallbackAuth(
+      request,
+      env,
+      store,
+      { buildId, providerSessionId },
+      ctx
+    );
+    if (authError) return authError;
+
+    logger.info("repo_image.build_complete_received", {
+      build_id: buildId,
+      provider_session_id: providerSessionId,
+      base_sha: baseSha,
+      request_id: ctx.request_id,
+      trace_id: ctx.trace_id,
+    });
+
+    const completion = completeVercelBuildFromSession(env, {
+      buildId,
+      providerSessionId,
+      baseSha: baseSha || "",
+      buildDurationSeconds: buildDurationSeconds ?? 0,
+      requestId: ctx.request_id,
+      traceId: ctx.trace_id,
+    });
+
+    if (ctx.executionCtx) {
+      ctx.executionCtx.waitUntil(completion);
+    } else {
+      await completion;
+    }
+
+    return json({ ok: true, snapshotPending: true });
   }
 
-  const store = new RepoImageStore(env.DB);
+  const authError = await requireBuildCallbackAuth(request, env, ctx);
+  if (authError) return authError;
+
+  if (!providerImageId) {
+    return error("provider_image_id is required", 400);
+  }
 
   try {
     const result = await store.markReady(
       buildId,
+      backend,
       providerImageId,
       baseSha || "",
       buildDurationSeconds ?? 0
     );
+    if (!result.updated) {
+      return error("Build is not accepting completion", 409);
+    }
 
     logger.info("repo_image.build_complete", {
       build_id: buildId,
@@ -280,7 +373,7 @@ async function completeVercelBuildFromSession(
 
     if (!snapshot.success || !snapshot.imageId) {
       const message = snapshot.error || "Vercel snapshot did not return an image id";
-      await store.markFailed(params.buildId, message);
+      await store.markFailed(params.buildId, "vercel", message);
       logger.error("repo_image.vercel_snapshot_failed", {
         build_id: params.buildId,
         provider_session_id: params.providerSessionId,
@@ -294,10 +387,22 @@ async function completeVercelBuildFromSession(
 
     const result = await store.markReady(
       params.buildId,
+      "vercel",
       snapshot.imageId,
       params.baseSha,
       params.buildDurationSeconds
     );
+    if (!result.updated) {
+      logger.warn("repo_image.vercel_snapshot_not_applied", {
+        build_id: params.buildId,
+        provider_session_id: params.providerSessionId,
+        provider_image_id: snapshot.imageId,
+        duration_ms: Date.now() - snapshotStart,
+        request_id: params.requestId,
+        trace_id: params.traceId,
+      });
+      return;
+    }
 
     logger.info("repo_image.build_complete", {
       build_id: params.buildId,
@@ -323,7 +428,7 @@ async function completeVercelBuildFromSession(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     try {
-      await store.markFailed(params.buildId, message);
+      await store.markFailed(params.buildId, "vercel", message);
     } catch (markFailedError) {
       logger.error("repo_image.mark_failed_after_snapshot_error", {
         build_id: params.buildId,
@@ -345,7 +450,7 @@ async function completeVercelBuildFromSession(
 
 /**
  * POST /repo-images/build-failed
- * Callback from Modal async builder on failure.
+ * Callback from repo image builders on failure.
  */
 async function handleBuildFailed(
   request: Request,
@@ -360,10 +465,11 @@ async function handleBuildFailed(
     return error("Database not configured", 503);
   }
 
-  const authError = await requireBuildCallbackAuth(request, env, ctx);
-  if (authError) return authError;
-
-  const body = await parseJsonBody<{ build_id?: string; error?: string }>(request);
+  const body = await parseJsonBody<{
+    build_id?: string;
+    provider_session_id?: string;
+    error?: string;
+  }>(request);
   if (body instanceof Response) return body;
 
   const buildId = body.build_id;
@@ -372,13 +478,36 @@ async function handleBuildFailed(
   }
 
   const store = new RepoImageStore(env.DB);
+  const backend = getRepoImageBackend(env);
+
+  if (backend === "vercel") {
+    if (!body.provider_session_id) {
+      return error("provider_session_id is required", 400);
+    }
+
+    const authError = await requireVercelBuildCallbackAuth(
+      request,
+      env,
+      store,
+      { buildId, providerSessionId: body.provider_session_id },
+      ctx
+    );
+    if (authError) return authError;
+  } else {
+    const authError = await requireBuildCallbackAuth(request, env, ctx);
+    if (authError) return authError;
+  }
 
   try {
-    await store.markFailed(buildId, body.error || "Unknown error");
+    const updated = await store.markFailed(buildId, backend, body.error || "Unknown error");
+    if (!updated) {
+      return error("Build is not accepting failure", 409);
+    }
 
     logger.info("repo_image.build_failed", {
       build_id: buildId,
       error_message: body.error,
+      provider_session_id: body.provider_session_id,
       request_id: ctx.request_id,
       trace_id: ctx.trace_id,
     });
@@ -425,6 +554,11 @@ async function handleTriggerBuild(
   const buildId = `img-${owner}-${name}-${now}`;
 
   try {
+    const callbackToken = backend === "vercel" ? generateRepoImageCallbackToken() : undefined;
+    const callbackTokenHash = callbackToken
+      ? await hashRepoImageCallbackToken(callbackToken, env)
+      : undefined;
+
     // Register the build in D1
     await store.registerBuild({
       id: buildId,
@@ -432,6 +566,8 @@ async function handleTriggerBuild(
       repoName: name,
       provider: backend,
       baseBranch: "main",
+      callbackTokenHash,
+      callbackTokenExpiresAt: callbackToken ? now + VERCEL_CALLBACK_TOKEN_TTL_MS : undefined,
     });
 
     // Construct callback URL
@@ -523,8 +659,15 @@ async function handleTriggerBuild(
         defaultBranch: "main",
         buildId,
         callbackUrl,
+        callbackToken: callbackToken!,
         userEnvVars,
         cloneToken,
+        onProviderSessionCreated: async (providerSessionId) => {
+          const bound = await store.bindProviderSession(buildId, "vercel", providerSessionId);
+          if (!bound) {
+            throw new Error("Failed to bind Vercel build session");
+          }
+        },
         correlation: { trace_id: ctx.trace_id, request_id: ctx.request_id },
       });
     }
@@ -539,6 +682,17 @@ async function handleTriggerBuild(
 
     return json({ buildId, status: "building" });
   } catch (e) {
+    try {
+      await store.markFailed(buildId, backend, e instanceof Error ? e.message : String(e));
+    } catch (markFailedError) {
+      logger.warn("repo_image.trigger_mark_failed_error", {
+        error: markFailedError instanceof Error ? markFailedError.message : String(markFailedError),
+        build_id: buildId,
+        request_id: ctx.request_id,
+        trace_id: ctx.trace_id,
+      });
+    }
+
     logger.error("repo_image.trigger_error", {
       error: e instanceof Error ? e.message : String(e),
       repo_owner: owner,

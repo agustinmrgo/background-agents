@@ -9,7 +9,6 @@ from typing import Any
 
 import httpx
 
-from .auth import generate_internal_token
 from .log_config import StructuredLogger, get_logger
 
 CALLBACK_MAX_RETRIES = 3
@@ -20,7 +19,7 @@ ERROR_MESSAGE_MAX_CHARS = 500
 
 BUILD_ID_ENV = "OI_REPO_IMAGE_BUILD_ID"
 CALLBACK_URL_ENV = "OI_REPO_IMAGE_CALLBACK_URL"
-CALLBACK_SECRET_ENV = "OI_REPO_IMAGE_CALLBACK_SECRET"
+CALLBACK_TOKEN_ENV = "OI_REPO_IMAGE_CALLBACK_TOKEN"
 PROVIDER_SESSION_ID_ENV = "OI_REPO_IMAGE_PROVIDER_SESSION_ID"
 
 
@@ -30,7 +29,7 @@ class RepoImageBuildCallback:
 
     build_id: str
     callback_url: str
-    secret: str
+    token: str
     provider_session_id: str = ""
     logger: StructuredLogger = field(default_factory=lambda: get_logger("repo_image_callback"))
 
@@ -39,9 +38,9 @@ class RepoImageBuildCallback:
         """Create a callback reporter from build-mode environment variables."""
         build_id = os.environ.get(BUILD_ID_ENV, "")
         callback_url = os.environ.get(CALLBACK_URL_ENV, "")
-        secret = os.environ.get(CALLBACK_SECRET_ENV, "")
+        token = os.environ.get(CALLBACK_TOKEN_ENV, "")
 
-        if not build_id and not callback_url and not secret:
+        if not build_id and not callback_url and not token:
             return None
 
         log = logger or get_logger("repo_image_callback")
@@ -50,7 +49,7 @@ class RepoImageBuildCallback:
             for name, value in (
                 (BUILD_ID_ENV, build_id),
                 (CALLBACK_URL_ENV, callback_url),
-                (CALLBACK_SECRET_ENV, secret),
+                (CALLBACK_TOKEN_ENV, token),
             )
             if not value
         ]
@@ -61,7 +60,7 @@ class RepoImageBuildCallback:
         return cls(
             build_id=build_id,
             callback_url=callback_url,
-            secret=secret,
+            token=token,
             provider_session_id=os.environ.get(PROVIDER_SESSION_ID_ENV, ""),
             logger=log,
         )
@@ -80,24 +79,23 @@ class RepoImageBuildCallback:
 
     async def report_failure(self, error: str) -> bool:
         """Report a failed repo-image build."""
-        return await self._post_with_retry(
-            build_failed_callback_url(self.callback_url),
-            {
-                "build_id": self.build_id,
-                "error": error[-ERROR_MESSAGE_MAX_CHARS:],
-            },
-        )
+        payload = {
+            "build_id": self.build_id,
+            "error": error[-ERROR_MESSAGE_MAX_CHARS:],
+        }
+        if self.provider_session_id:
+            payload["provider_session_id"] = self.provider_session_id
+        return await self._post_with_retry(build_failed_callback_url(self.callback_url), payload)
 
     async def _post_with_retry(self, url: str, payload: dict[str, Any]) -> bool:
         for attempt in range(1, CALLBACK_MAX_RETRIES + 1):
             try:
-                token = generate_internal_token(self.secret)
                 async with httpx.AsyncClient(timeout=CALLBACK_TIMEOUT_SECONDS) as client:
                     response = await client.post(
                         url,
                         json=payload,
                         headers={
-                            "Authorization": f"Bearer {token}",
+                            "Authorization": f"Bearer {self.token}",
                             "Content-Type": "application/json",
                             "User-Agent": CALLBACK_USER_AGENT,
                         },

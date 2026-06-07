@@ -42,6 +42,10 @@ const REPO_IMAGE_CALLBACK_ENV_KEYS = [
   "OI_REPO_IMAGE_PROVIDER_SESSION_ID",
   "OI_REPO_IMAGE_BUILD_ID",
   "OI_REPO_IMAGE_CALLBACK_URL",
+  "OI_REPO_IMAGE_CALLBACK_TOKEN",
+] as const;
+const RESERVED_REPO_IMAGE_CALLBACK_ENV_KEYS = [
+  ...REPO_IMAGE_CALLBACK_ENV_KEYS,
   "OI_REPO_IMAGE_CALLBACK_SECRET",
 ] as const;
 
@@ -52,7 +56,6 @@ export interface VercelProviderConfig {
   runtime?: string;
   snapshotExpirationMs?: number;
   codeServerPasswordSecret: string;
-  internalCallbackSecret?: string;
   apiBaseUrl?: string;
   token: string;
   teamId?: string;
@@ -64,8 +67,10 @@ export interface TriggerVercelRepoImageBuildConfig {
   repoName: string;
   defaultBranch: string;
   callbackUrl: string;
+  callbackToken: string;
   userEnvVars?: Record<string, string>;
   cloneToken?: string;
+  onProviderSessionCreated?: (providerSessionId: string) => Promise<void>;
   correlation?: CorrelationContext;
 }
 
@@ -233,13 +238,6 @@ export class VercelSandboxProvider implements SandboxProvider {
   async triggerRepoImageBuild(
     config: TriggerVercelRepoImageBuildConfig
   ): Promise<TriggerVercelRepoImageBuildResult> {
-    if (!this.providerConfig.internalCallbackSecret) {
-      throw new SandboxProviderError(
-        "INTERNAL_CALLBACK_SECRET is required for Vercel repo image builds",
-        "permanent"
-      );
-    }
-
     try {
       const baseSnapshotId = await this.resolveBaseSnapshotId(config.correlation);
       if (!baseSnapshotId) {
@@ -266,6 +264,10 @@ export class VercelSandboxProvider implements SandboxProvider {
         },
         config.correlation
       );
+
+      if (config.onProviderSessionCreated) {
+        await config.onProviderSessionCreated(created.session.id);
+      }
 
       const command = await this.launchEntrypoint(
         created.session.id,
@@ -363,7 +365,7 @@ export class VercelSandboxProvider implements SandboxProvider {
     config: TriggerVercelRepoImageBuildConfig
   ): Promise<Record<string, string>> {
     const envVars: Record<string, string> = { ...(config.userEnvVars ?? {}) };
-    for (const key of REPO_IMAGE_CALLBACK_ENV_KEYS) {
+    for (const key of RESERVED_REPO_IMAGE_CALLBACK_ENV_KEYS) {
       delete envVars[key];
     }
 
@@ -564,7 +566,7 @@ export class VercelSandboxProvider implements SandboxProvider {
       [REPO_IMAGE_CALLBACK_ENV_KEYS[0]]: sessionId,
       [REPO_IMAGE_CALLBACK_ENV_KEYS[1]]: config.buildId,
       [REPO_IMAGE_CALLBACK_ENV_KEYS[2]]: config.callbackUrl,
-      [REPO_IMAGE_CALLBACK_ENV_KEYS[3]]: this.providerConfig.internalCallbackSecret ?? "",
+      [REPO_IMAGE_CALLBACK_ENV_KEYS[3]]: config.callbackToken,
     };
   }
 
