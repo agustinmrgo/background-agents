@@ -33,7 +33,7 @@ export type ValidModel = (typeof VALID_MODELS)[number];
 /**
  * Default model to use when none specified or invalid.
  */
-export const DEFAULT_MODEL: ValidModel = "anthropic/claude-sonnet-4-6";
+export const DEFAULT_MODEL: ValidModel = "openai/gpt-5.5";
 
 /**
  * Reasoning effort levels supported across providers.
@@ -69,7 +69,7 @@ export const MODEL_REASONING_CONFIG: Partial<Record<ValidModel, ModelReasoningCo
   },
   "openai/gpt-5.2": { efforts: ["none", "low", "medium", "high", "xhigh"], default: undefined },
   "openai/gpt-5.4": { efforts: ["none", "low", "medium", "high", "xhigh"], default: undefined },
-  "openai/gpt-5.5": { efforts: ["none", "low", "medium", "high", "xhigh"], default: undefined },
+  "openai/gpt-5.5": { efforts: ["none", "low", "medium", "high", "xhigh"], default: "medium" },
   "openai/gpt-5.2-codex": { efforts: ["low", "medium", "high", "xhigh"], default: "high" },
   "openai/gpt-5.3-codex": { efforts: ["low", "medium", "high", "xhigh"], default: "high" },
   "openai/gpt-5.3-codex-spark": { efforts: ["low", "medium", "high", "xhigh"], default: "high" },

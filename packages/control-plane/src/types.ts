@@ -49,8 +49,10 @@ export interface Env {
   // D1 database
   DB: D1Database;
 
-  // R2 buckets
-  MEDIA_BUCKET: R2Bucket;
+  // Supabase Storage S3-compatible media bucket
+  SUPABASE_S3_ENDPOINT: string;
+  SUPABASE_S3_REGION: string;
+  SUPABASE_S3_MEDIA_BUCKET: string;
 
   // Secrets
   GITHUB_CLIENT_ID?: string;
@@ -60,6 +62,8 @@ export interface Env {
   MODAL_TOKEN_ID?: string;
   MODAL_TOKEN_SECRET?: string;
   MODAL_API_SECRET?: string; // Shared secret for authenticating with Modal endpoints
+  SUPABASE_S3_ACCESS_KEY_ID: string;
+  SUPABASE_S3_SECRET_ACCESS_KEY: string;
   DAYTONA_API_KEY?: string; // Daytona REST API key (Bearer auth + HMAC derivation)
   INTERNAL_CALLBACK_SECRET?: string; // For signing callbacks to slack-bot
   SLACK_BOT_TOKEN?: string; // Slack bot token for agent-initiated chat.postMessage calls

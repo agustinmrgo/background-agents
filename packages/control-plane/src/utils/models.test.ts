@@ -310,10 +310,13 @@ describe("model utilities", () => {
       expect(getDefaultReasoningEffort("openai/gpt-5.3-codex-spark")).toBe("high");
     });
 
-    it("returns undefined for GPT 5.2, GPT 5.4, and GPT 5.5", () => {
+    it("returns undefined for GPT 5.2 and GPT 5.4", () => {
       expect(getDefaultReasoningEffort("openai/gpt-5.2")).toBeUndefined();
       expect(getDefaultReasoningEffort("openai/gpt-5.4")).toBeUndefined();
-      expect(getDefaultReasoningEffort("openai/gpt-5.5")).toBeUndefined();
+    });
+
+    it("returns medium for GPT 5.5", () => {
+      expect(getDefaultReasoningEffort("openai/gpt-5.5")).toBe("medium");
     });
 
     it("returns undefined for invalid models", () => {
@@ -381,11 +384,11 @@ describe("model utilities", () => {
       });
     });
 
-    it("returns config for GPT 5.5 with none effort", () => {
+    it("returns config for GPT 5.5 with medium default", () => {
       const config = getReasoningConfig("openai/gpt-5.5");
       expect(config).toEqual({
         efforts: ["none", "low", "medium", "high", "xhigh"],
-        default: undefined,
+        default: "medium",
       });
     });
 

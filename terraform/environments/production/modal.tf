@@ -38,9 +38,19 @@ module "modal_app" {
   secrets = [
     {
       name = "llm-api-keys"
-      values = {
-        ANTHROPIC_API_KEY = var.anthropic_api_key
-      }
+      values = merge(
+        {
+          # Keep the Modal secret present even before OAuth is configured.
+          # Empty value is ignored by the sandbox runtime.
+          OPENAI_OAUTH_REFRESH_TOKEN = var.openai_oauth_refresh_token
+        },
+        var.anthropic_api_key != "" ? {
+          ANTHROPIC_API_KEY = var.anthropic_api_key
+        } : {},
+        var.openai_oauth_account_id != "" ? {
+          OPENAI_OAUTH_ACCOUNT_ID = var.openai_oauth_account_id
+        } : {}
+      )
     },
     {
       name = "github-app"

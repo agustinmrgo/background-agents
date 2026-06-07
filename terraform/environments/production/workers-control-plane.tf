@@ -37,13 +37,6 @@ module "control_plane_worker" {
     }
   ]
 
-  r2_buckets = [
-    {
-      binding_name = "MEDIA_BUCKET"
-      bucket_name  = cloudflare_r2_bucket.media.name
-    }
-  ]
-
   service_bindings = concat(
     var.enable_slack_bot ? [
       {
@@ -69,6 +62,9 @@ module "control_plane_worker" {
       { name = "DEPLOYMENT_NAME", value = var.deployment_name },
       { name = "APP_NAME", value = var.app_name },
       { name = "SANDBOX_PROVIDER", value = var.sandbox_provider },
+      { name = "SUPABASE_S3_ENDPOINT", value = var.supabase_s3_endpoint },
+      { name = "SUPABASE_S3_REGION", value = var.supabase_s3_region },
+      { name = "SUPABASE_S3_MEDIA_BUCKET", value = var.supabase_s3_media_bucket },
     ],
     local.use_modal_backend ? [
       { name = "MODAL_WORKSPACE", value = var.modal_workspace },
@@ -94,6 +90,8 @@ module "control_plane_worker" {
       { name = "GITHUB_APP_ID", value = var.github_app_id },
       { name = "GITHUB_APP_PRIVATE_KEY", value = var.github_app_private_key },
       { name = "GITHUB_APP_INSTALLATION_ID", value = var.github_app_installation_id },
+      { name = "SUPABASE_S3_ACCESS_KEY_ID", value = var.supabase_s3_access_key_id },
+      { name = "SUPABASE_S3_SECRET_ACCESS_KEY", value = var.supabase_s3_secret_access_key },
     ],
     local.use_modal_backend ? [
       { name = "MODAL_TOKEN_ID", value = var.modal_token_id },

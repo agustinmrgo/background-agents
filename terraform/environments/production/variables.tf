@@ -3,7 +3,7 @@
 # =============================================================================
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token with Workers, KV, R2, and D1 permissions"
+  description = "Cloudflare API token with Workers, KV, D1, and Durable Objects permissions"
   type        = string
   sensitive   = true
 }
@@ -237,9 +237,24 @@ variable "linear_api_key" {
 # =============================================================================
 
 variable "anthropic_api_key" {
-  description = "Anthropic API key for Claude"
+  description = "Optional Anthropic API key fallback. Leave empty when using OpenAI OAuth/Codex auth."
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "openai_oauth_refresh_token" {
+  description = "Optional OpenAI OAuth refresh token for OpenCode/Codex subscription auth in sandboxes."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "openai_oauth_account_id" {
+  description = "Optional OpenAI OAuth account ID written to OpenCode auth.json when using subscription auth."
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 # =============================================================================
@@ -274,6 +289,34 @@ variable "modal_api_secret" {
     condition     = var.sandbox_provider != "modal" || length(var.modal_api_secret) > 0
     error_message = "modal_api_secret must be set when sandbox_provider = 'modal'."
   }
+}
+
+variable "supabase_s3_endpoint" {
+  description = "Supabase Storage S3 endpoint for media artifacts (https://<project-ref>.storage.supabase.co/storage/v1/s3)"
+  type        = string
+}
+
+variable "supabase_s3_region" {
+  description = "Supabase project region used for S3 SigV4 signing"
+  type        = string
+}
+
+variable "supabase_s3_media_bucket" {
+  description = "Private Supabase Storage bucket for screenshots and media artifacts"
+  type        = string
+  default     = "open-inspect-media"
+}
+
+variable "supabase_s3_access_key_id" {
+  description = "Supabase Storage S3 access key ID for server-side media artifact access"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_s3_secret_access_key" {
+  description = "Supabase Storage S3 secret access key for server-side media artifact access"
+  type        = string
+  sensitive   = true
 }
 
 variable "daytona_api_url" {
@@ -405,22 +448,6 @@ variable "project_root" {
   description = "Root path to the project repository"
   type        = string
   default     = "../../../"
-}
-
-# =============================================================================
-# R2 Storage
-# =============================================================================
-
-variable "r2_media_location" {
-  description = "Cloudflare R2 location hint for the media bucket (e.g. ENAM, WNAM, APAC, WEUR, EEUR)"
-  type        = string
-  default     = "ENAM"
-}
-
-variable "r2_media_bucket_name" {
-  description = "Override the R2 media bucket name. Leave empty to use the default 'open-inspect-media-<deployment_name>'. Set this when the bucket must be pre-created out-of-band (e.g. when the Terraform credentials cannot create R2 buckets)."
-  type        = string
-  default     = ""
 }
 
 # =============================================================================

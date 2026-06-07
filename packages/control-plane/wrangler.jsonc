@@ -21,10 +21,11 @@
     },
   ],
   "kv_namespaces": [{ "binding": "REPOS_CACHE", "id": "00000000000000000000000000000000" }],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA_BUCKET",
-      "bucket_name": "open-inspect-media-test",
-    },
-  ],
+  "vars": {
+    "SUPABASE_S3_ENDPOINT": "memory://media",
+    "SUPABASE_S3_REGION": "local",
+    "SUPABASE_S3_MEDIA_BUCKET": "open-inspect-media-test",
+    "SUPABASE_S3_ACCESS_KEY_ID": "test-access-key",
+    "SUPABASE_S3_SECRET_ACCESS_KEY": "test-secret-key",
+  },
 }

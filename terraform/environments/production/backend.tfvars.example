@@ -1,15 +1,20 @@
-# Cloudflare R2 Backend Configuration
+# Supabase Storage S3-compatible backend configuration for Terraform state.
 # Copy this file to backend.tfvars and fill in your values.
 # NEVER commit backend.tfvars to source control!
 #
 # Usage: terraform init -backend-config=backend.tfvars
 
-# R2 API Token credentials (create at Cloudflare Dashboard → R2 → Manage R2 API Tokens)
+# Generate these credentials in Supabase Dashboard:
+# Storage → S3 Configuration → Access keys.
 access_key = ""
 secret_key = ""
+region     = ""
 
-# R2 endpoint (replace with your Cloudflare account ID)
-# Find your account ID in the Cloudflare dashboard URL or account overview
+# Official Supabase S3 endpoint shape:
+# https://<project-ref>.storage.supabase.co/storage/v1/s3
 endpoints = {
-  s3 = "https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com"
+  s3 = "https://<project-ref>.storage.supabase.co/storage/v1/s3"
 }
+
+# Required for Supabase's path-style S3 endpoint.
+use_path_style = true

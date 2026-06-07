@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { generateInternalToken } from "../../src/auth/internal";
+import { createMediaObjectStorage } from "../../src/storage/object-storage";
 import { initNamedSession, queryDO, seedMessage, seedSandboxAuthHash } from "./helpers";
 
 const PNG_SIGNATURE = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -12,6 +13,13 @@ const MP4_BYTES = Uint8Array.from([
 async function internalAuthHeaders(): Promise<Record<string, string>> {
   const token = await generateInternalToken(env.INTERNAL_CALLBACK_SECRET!);
   return { Authorization: `Bearer ${token}` };
+}
+
+function contentTypeOf(object: { writeHttpMetadata(headers: Headers): void } | null): string | null {
+  if (!object) return null;
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  return headers.get("content-type");
 }
 
 async function seedProcessingMessage(
@@ -88,7 +96,7 @@ describe("session media routes", () => {
     });
   });
 
-  it("uploads a screenshot, stores it in R2, and persists artifact + event rows", async () => {
+  it("uploads a screenshot, stores it in object storage, and persists artifact + event rows", async () => {
     const sessionName = `media-upload-${Date.now()}`;
     const { stub } = await initNamedSession(sessionName);
     await seedSandboxAuthHash(stub, {
@@ -116,9 +124,9 @@ describe("session media routes", () => {
     expect(body.artifactId).toBeTruthy();
     expect(body.objectKey).toBe(`sessions/${sessionName}/media/${body.artifactId}.png`);
 
-    const object = await env.MEDIA_BUCKET.get(body.objectKey);
+    const object = await createMediaObjectStorage(env).get(body.objectKey);
     expect(object).not.toBeNull();
-    expect(object?.httpMetadata?.contentType).toBe("image/png");
+    expect(contentTypeOf(object)).toBe("image/png");
 
     const artifacts = await queryDO<{ id: string; type: string; url: string; metadata: string }>(
       stub,
@@ -190,9 +198,9 @@ describe("session media routes", () => {
     expect(body.artifactId).toBeTruthy();
     expect(body.objectKey).toBe(`sessions/${sessionName}/media/${body.artifactId}.mp4`);
 
-    const object = await env.MEDIA_BUCKET.get(body.objectKey);
+    const object = await createMediaObjectStorage(env).get(body.objectKey);
     expect(object).not.toBeNull();
-    expect(object?.httpMetadata?.contentType).toBe("video/mp4");
+    expect(contentTypeOf(object)).toBe("video/mp4");
 
     const artifacts = await queryDO<{ id: string; type: string; url: string; metadata: string }>(
       stub,
@@ -389,7 +397,7 @@ describe("session media routes", () => {
     await expect(response.json()).resolves.toEqual({ error: "Requested range is not satisfiable" });
   });
 
-  it("returns 404 when the screenshot object is missing from R2", async () => {
+  it("returns 404 when the screenshot object is missing from object storage", async () => {
     const sessionName = `media-missing-object-${Date.now()}`;
     const { stub } = await initNamedSession(sessionName);
     await seedSandboxAuthHash(stub, {
@@ -411,7 +419,7 @@ describe("session media routes", () => {
     });
     const uploadBody = await uploadResponse.json<{ artifactId: string; objectKey: string }>();
 
-    await env.MEDIA_BUCKET.delete(uploadBody.objectKey);
+    await createMediaObjectStorage(env).delete(uploadBody.objectKey);
 
     const response = await SELF.fetch(
       `https://test.local/sessions/${sessionName}/media/${uploadBody.artifactId}`,
@@ -424,15 +432,13 @@ describe("session media routes", () => {
     await expect(response.json()).resolves.toEqual({ error: "Media artifact not found" });
   });
 
-  it("falls back to the R2 object's content type when artifact metadata is incomplete", async () => {
+  it("falls back to the stored object's content type when artifact metadata is incomplete", async () => {
     const sessionName = `media-object-metadata-${Date.now()}`;
     const { stub } = await initNamedSession(sessionName);
     await seedProcessingMessage(stub, "msg-1");
 
     const objectKey = `sessions/${sessionName}/media/artifact-legacy.png`;
-    await env.MEDIA_BUCKET.put(objectKey, PNG_SIGNATURE, {
-      httpMetadata: { contentType: "image/png" },
-    });
+    await createMediaObjectStorage(env).put(objectKey, PNG_SIGNATURE, { contentType: "image/png" });
 
     const createArtifactResponse = await stub.fetch(
       "http://internal/internal/create-media-artifact",

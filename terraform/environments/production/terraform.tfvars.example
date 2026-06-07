@@ -16,8 +16,8 @@
 # Required account permissions:
 #   - Workers Scripts: Edit
 #   - Workers KV Storage: Edit
-#   - Workers R2 Storage: Edit
 #   - D1: Edit
+#   - Durable Objects: Edit
 # Optional if you manage Cloudflare routes/custom domains:
 #   - Workers Routes: Edit
 # Create at: https://dash.cloudflare.com/profile/api-tokens
@@ -156,9 +156,14 @@ linear_webhook_secret = ""   # Webhook Signing Secret from the application confi
 # API Keys
 # =============================================================================
 
-# Anthropic API key for Claude
-# From: https://console.anthropic.com/
+# Optional Anthropic API key fallback. Leave empty when using OpenAI OAuth/Codex auth.
 anthropic_api_key = ""
+
+# Optional OpenAI OAuth values for OpenCode/Codex subscription auth in sandboxes.
+# Fill these after capturing OAuth auth material; until then deploy can proceed,
+# but agent turns that require OpenAI subscription auth will fail authentication.
+openai_oauth_refresh_token = ""
+openai_oauth_account_id = ""
 
 # =============================================================================
 # Security Secrets
@@ -178,6 +183,15 @@ internal_callback_secret = ""
 # Only required when sandbox_provider = "modal"
 # Generate with: openssl rand -hex 32
 modal_api_secret = ""
+
+# Supabase Storage S3 credentials for screenshots/media artifacts.
+# Create a private Supabase Storage bucket, enable Storage S3, and generate
+# access keys from Storage -> S3 Configuration. These keys are server-side only.
+supabase_s3_endpoint = "https://<project-ref>.storage.supabase.co/storage/v1/s3"
+supabase_s3_region = ""
+supabase_s3_media_bucket = "open-inspect-media"
+supabase_s3_access_key_id = ""
+supabase_s3_secret_access_key = ""
 
 # NextAuth.js secret
 nextauth_secret = ""
@@ -221,43 +235,6 @@ project_root = "../../../"
 # Example: "/branding/acme-logo.svg" (file under packages/web/public/) or
 #          "https://cdn.example.com/logo.svg".
 # app_icon_url = ""
-
-# Override the R2 media bucket name (optional)
-# Defaults to "open-inspect-media-<deployment_name>" when left empty.
-# Set this when the bucket must be pre-created out-of-band — for example, when
-# the Cloudflare API token used by Terraform doesn't have permission to create
-# R2 buckets and an admin had to provision one with a specific name.
-#
-# Manual setup requirements (when an admin pre-creates the bucket):
-#   - Must live in the same Cloudflare account as the Workers (cloudflare_account_id).
-#   - Private bucket — do NOT enable public access. The control-plane Worker
-#     reads/writes objects through its binding; clients never hit R2 directly.
-#   - No CORS rules or lifecycle policies are required.
-#   - Location should match r2_media_location (default ENAM).
-#
-# Create with wrangler (equivalent to what Terraform would do):
-#   wrangler r2 bucket create <bucket-name> --location ENAM
-# Or create via the Cloudflare dashboard: R2 -> Create bucket (Standard storage class).
-#
-# After manual creation, import the bucket so Terraform manages the binding without
-# trying to recreate it:
-#   terraform import cloudflare_r2_bucket.media <cloudflare_account_id>/<bucket-name>/default
-#
-# WARNING — renaming an existing Terraform-managed bucket:
-# If you previously deployed without this variable (Terraform owns the default-named
-# bucket) and now set r2_media_bucket_name to a different name WITHOUT first running
-# `terraform import` on the new name, Terraform will destroy the existing bucket and
-# create a new one — permanently deleting all stored objects. Migrate objects first
-# (e.g. with rclone) and import the new bucket before applying.
-#
-# Worker runtime needs (granted automatically through the binding, listed for reference):
-#   - R2 object-level: Read, Write, Delete on this bucket only.
-# The Terraform/Cloudflare API token does NOT need object-level R2 permissions —
-# it only manages the bucket resource and the Worker binding. Required token scopes:
-#   - Workers R2 Storage: Edit (only needed when Terraform creates/manages the bucket;
-#     if the bucket is pre-created and imported, drop to Read or omit)
-#   - Workers Scripts: Edit (to attach the MEDIA_BUCKET binding to the Worker)
-# r2_media_bucket_name = ""
 
 # =============================================================================
 # Initial Deployment Flags
