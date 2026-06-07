@@ -20,6 +20,7 @@ describe("D1 RepoImageStore", () => {
       id: "img-acme-repo-1000",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
 
@@ -44,13 +45,14 @@ describe("D1 RepoImageStore", () => {
       id: "img-1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
 
     const result = await store.markReady("img-1", "modal-img-abc", "abc123", 42.5);
     expect(result.replacedImageId).toBeNull();
 
-    const ready = await store.getLatestReady("acme", "repo");
+    const ready = await store.getLatestReady("acme", "repo", "modal");
     expect(ready).not.toBeNull();
     expect(ready!.provider_image_id).toBe("modal-img-abc");
     expect(ready!.base_sha).toBe("abc123");
@@ -64,6 +66,7 @@ describe("D1 RepoImageStore", () => {
       id: "img-old",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markReady("img-old", "modal-img-old", "sha-old", 30);
@@ -72,13 +75,14 @@ describe("D1 RepoImageStore", () => {
       id: "img-new",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     const result = await store.markReady("img-new", "modal-img-new", "sha-new", 40);
 
     expect(result.replacedImageId).toBe("modal-img-old");
 
-    const ready = await store.getLatestReady("acme", "repo");
+    const ready = await store.getLatestReady("acme", "repo", "modal");
     expect(ready!.id).toBe("img-new");
 
     // Old image row should be deleted
@@ -92,6 +96,7 @@ describe("D1 RepoImageStore", () => {
       id: "img-1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markFailed("img-1", "npm install failed");
@@ -103,7 +108,7 @@ describe("D1 RepoImageStore", () => {
 
   it("getLatestReady returns null when no ready images", async () => {
     await metadataStore.setImageBuildEnabled("acme", "repo", true);
-    const result = await store.getLatestReady("acme", "repo");
+    const result = await store.getLatestReady("acme", "repo", "modal");
     expect(result).toBeNull();
   });
 
@@ -113,17 +118,19 @@ describe("D1 RepoImageStore", () => {
       id: "img-building",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.registerBuild({
       id: "img-failed",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markFailed("img-failed", "error");
 
-    const result = await store.getLatestReady("acme", "repo");
+    const result = await store.getLatestReady("acme", "repo", "modal");
     expect(result).toBeNull();
   });
 
@@ -133,11 +140,12 @@ describe("D1 RepoImageStore", () => {
       id: "img-1",
       repoOwner: "Acme",
       repoName: "Repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markReady("img-1", "modal-img-1", "sha1", 30);
 
-    const result = await store.getLatestReady("ACME", "REPO");
+    const result = await store.getLatestReady("ACME", "REPO", "modal");
     expect(result).not.toBeNull();
     expect(result!.id).toBe("img-1");
   });
@@ -148,11 +156,12 @@ describe("D1 RepoImageStore", () => {
       id: "img-1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markReady("img-1", "modal-img-1", "sha1", 30);
 
-    const result = await store.getLatestReady("acme", "repo");
+    const result = await store.getLatestReady("acme", "repo", "modal");
     expect(result).toBeNull();
   });
 
@@ -162,17 +171,18 @@ describe("D1 RepoImageStore", () => {
       id: "img-1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markReady("img-1", "modal-img-1", "sha1", 30);
 
     // Disable — image should not be returned
     await metadataStore.setImageBuildEnabled("acme", "repo", false);
-    expect(await store.getLatestReady("acme", "repo")).toBeNull();
+    expect(await store.getLatestReady("acme", "repo", "modal")).toBeNull();
 
     // Re-enable — same image should be returned immediately
     await metadataStore.setImageBuildEnabled("acme", "repo", true);
-    const result = await store.getLatestReady("acme", "repo");
+    const result = await store.getLatestReady("acme", "repo", "modal");
     expect(result).not.toBeNull();
     expect(result!.id).toBe("img-1");
   });
@@ -182,12 +192,14 @@ describe("D1 RepoImageStore", () => {
       id: "img-1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.registerBuild({
       id: "img-2",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
 
@@ -200,12 +212,14 @@ describe("D1 RepoImageStore", () => {
       id: "img-a",
       repoOwner: "acme",
       repoName: "repo-a",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.registerBuild({
       id: "img-b",
       repoOwner: "acme",
       repoName: "repo-b",
+      provider: "modal",
       baseBranch: "main",
     });
 
@@ -216,9 +230,9 @@ describe("D1 RepoImageStore", () => {
   it("markStaleBuildsAsFailed marks old building rows", async () => {
     // Insert a row with a very old created_at by using D1 directly
     await env.DB.prepare(
-      "INSERT INTO repo_images (id, repo_owner, repo_name, base_branch, provider_image_id, status, base_sha, created_at) VALUES (?, ?, ?, ?, '', 'building', '', ?)"
+      "INSERT INTO repo_images (id, repo_owner, repo_name, provider, base_branch, provider_image_id, status, base_sha, created_at) VALUES (?, ?, ?, ?, ?, '', 'building', '', ?)"
     )
-      .bind("img-stale", "acme", "repo", "main", Date.now() - 3600000)
+      .bind("img-stale", "acme", "repo", "modal", "main", Date.now() - 3600000)
       .run();
 
     const count = await store.markStaleBuildsAsFailed(1800000); // 30 min
@@ -232,9 +246,9 @@ describe("D1 RepoImageStore", () => {
 
   it("deleteOldFailedBuilds removes old failed rows", async () => {
     await env.DB.prepare(
-      "INSERT INTO repo_images (id, repo_owner, repo_name, base_branch, provider_image_id, status, base_sha, error_message, created_at) VALUES (?, ?, ?, ?, '', 'failed', '', 'old error', ?)"
+      "INSERT INTO repo_images (id, repo_owner, repo_name, provider, base_branch, provider_image_id, status, base_sha, error_message, created_at) VALUES (?, ?, ?, ?, ?, '', 'failed', '', 'old error', ?)"
     )
-      .bind("img-old-fail", "acme", "repo", "main", Date.now() - 86400000 - 1000)
+      .bind("img-old-fail", "acme", "repo", "modal", "main", Date.now() - 86400000 - 1000)
       .run();
 
     const count = await store.deleteOldFailedBuilds(86400000); // 24 hours
@@ -252,6 +266,7 @@ describe("D1 RepoImageStore", () => {
       id: "img-a",
       repoOwner: "acme",
       repoName: "repo-a",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markReady("img-a", "modal-a", "sha-a", 30);
@@ -260,12 +275,13 @@ describe("D1 RepoImageStore", () => {
       id: "img-b",
       repoOwner: "acme",
       repoName: "repo-b",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markReady("img-b", "modal-b", "sha-b", 40);
 
-    const readyA = await store.getLatestReady("acme", "repo-a");
-    const readyB = await store.getLatestReady("acme", "repo-b");
+    const readyA = await store.getLatestReady("acme", "repo-a", "modal");
+    const readyB = await store.getLatestReady("acme", "repo-b", "modal");
 
     expect(readyA!.provider_image_id).toBe("modal-a");
     expect(readyB!.provider_image_id).toBe("modal-b");
@@ -291,8 +307,8 @@ describe("D1 RepoImageStore", () => {
     });
     await store.markReady("img-vercel", "vercel-snapshot", "sha-vercel", 40);
 
-    const modalImage = await store.getLatestReady("acme", "repo", "main", "modal");
-    const vercelImage = await store.getLatestReady("acme", "repo", "main", "vercel");
+    const modalImage = await store.getLatestReady("acme", "repo", "modal", "main");
+    const vercelImage = await store.getLatestReady("acme", "repo", "vercel", "main");
 
     expect(modalImage!.provider_image_id).toBe("modal-img");
     expect(vercelImage!.provider_image_id).toBe("vercel-snapshot");
@@ -322,6 +338,7 @@ describe("Repo image HTTP routes", () => {
       id: "img-test-1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
 
@@ -341,7 +358,7 @@ describe("Repo image HTTP routes", () => {
     expect(body.ok).toBe(true);
     expect(body.replacedImageId).toBeNull();
 
-    const ready = await store.getLatestReady("acme", "repo");
+    const ready = await store.getLatestReady("acme", "repo", "modal");
     expect(ready).not.toBeNull();
     expect(ready!.provider_image_id).toBe("modal-img-xyz");
   });
@@ -351,6 +368,7 @@ describe("Repo image HTTP routes", () => {
       id: "img-auth-required",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
 
@@ -373,6 +391,7 @@ describe("Repo image HTTP routes", () => {
       id: "img-test-2",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
 
@@ -400,6 +419,7 @@ describe("Repo image HTTP routes", () => {
       id: "img-s1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
     await store.markReady("img-s1", "modal-img-1", "sha1", 30);
@@ -419,9 +439,9 @@ describe("Repo image HTTP routes", () => {
 
   it("POST /repo-images/mark-stale marks old building rows", async () => {
     await env.DB.prepare(
-      "INSERT INTO repo_images (id, repo_owner, repo_name, base_branch, provider_image_id, status, base_sha, created_at) VALUES (?, ?, ?, ?, '', 'building', '', ?)"
+      "INSERT INTO repo_images (id, repo_owner, repo_name, provider, base_branch, provider_image_id, status, base_sha, created_at) VALUES (?, ?, ?, ?, ?, '', 'building', '', ?)"
     )
-      .bind("img-stale-route", "acme", "repo", "main", Date.now() - 3600000)
+      .bind("img-stale-route", "acme", "repo", "modal", "main", Date.now() - 3600000)
       .run();
 
     const response = await SELF.fetch("https://test.local/repo-images/mark-stale", {
@@ -438,9 +458,9 @@ describe("Repo image HTTP routes", () => {
 
   it("POST /repo-images/cleanup deletes old failed builds", async () => {
     await env.DB.prepare(
-      "INSERT INTO repo_images (id, repo_owner, repo_name, base_branch, provider_image_id, status, base_sha, error_message, created_at) VALUES (?, ?, ?, ?, '', 'failed', '', 'old error', ?)"
+      "INSERT INTO repo_images (id, repo_owner, repo_name, provider, base_branch, provider_image_id, status, base_sha, error_message, created_at) VALUES (?, ?, ?, ?, ?, '', 'failed', '', 'old error', ?)"
     )
-      .bind("img-cleanup-route", "acme", "repo", "main", Date.now() - 86400000 - 1000)
+      .bind("img-cleanup-route", "acme", "repo", "modal", "main", Date.now() - 86400000 - 1000)
       .run();
 
     const response = await SELF.fetch("https://test.local/repo-images/cleanup", {
@@ -567,6 +587,7 @@ describe("Repo image HTTP routes", () => {
       id: "img-flow-1",
       repoOwner: "acme",
       repoName: "repo",
+      provider: "modal",
       baseBranch: "main",
     });
 
