@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { SELF, env } from "cloudflare:test";
+import { computeHmacHex } from "@open-inspect/shared";
 import { generateInternalToken } from "../../src/auth/internal";
 import { RepoImageStore } from "../../src/db/repo-images";
 import { RepoMetadataStore } from "../../src/db/repo-metadata";
+import { handleRequest } from "../../src/router";
+import type { Env } from "../../src/types";
 import { cleanD1Tables } from "./cleanup";
 
 describe("D1 RepoImageStore", () => {
@@ -322,6 +325,14 @@ async function authHeaders(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
+function vercelEnv(): Env {
+  return { ...(env as unknown as Env), SANDBOX_PROVIDER: "vercel" };
+}
+
+async function repoImageCallbackTokenHash(token: string): Promise<string> {
+  return computeHmacHex(`repo-image-callback:${token}`, env.INTERNAL_CALLBACK_SECRET!);
+}
+
 describe("Repo image HTTP routes", () => {
   let store: RepoImageStore;
   let metadataStore: RepoMetadataStore;
@@ -412,6 +423,145 @@ describe("Repo image HTTP routes", () => {
     const failed = status.find((r) => r.id === "img-test-2");
     expect(failed!.status).toBe("failed");
     expect(failed!.error_message).toBe("npm install failed");
+  });
+
+  it("POST /repo-images/build-failed accepts Vercel per-build callback auth through the full router", async () => {
+    const token = "vercel-callback-token";
+    await store.registerBuild({
+      id: "img-vercel-failed",
+      repoOwner: "acme",
+      repoName: "repo",
+      provider: "vercel",
+      baseBranch: "main",
+      callbackTokenHash: await repoImageCallbackTokenHash(token),
+      callbackTokenExpiresAt: Date.now() + 60_000,
+    });
+    await store.bindProviderSession("img-vercel-failed", "vercel", "vercel-session-1");
+
+    const response = await handleRequest(
+      new Request("https://test.local/repo-images/build-failed", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          build_id: "img-vercel-failed",
+          provider_session_id: "vercel-session-1",
+          error: "setup failed",
+        }),
+      }),
+      vercelEnv()
+    );
+
+    expect(response.status).toBe(200);
+    const status = await store.getStatus("acme", "repo");
+    const failed = status.find((row) => row.id === "img-vercel-failed");
+    expect(failed!.status).toBe("failed");
+    expect(failed!.error_message).toBe("setup failed");
+    expect(failed!.callback_token_used_at).toEqual(expect.any(Number));
+  });
+
+  it("POST /repo-images/build-failed rejects missing Vercel callback token through the full router", async () => {
+    await store.registerBuild({
+      id: "img-vercel-missing-token",
+      repoOwner: "acme",
+      repoName: "repo",
+      provider: "vercel",
+      baseBranch: "main",
+      callbackTokenHash: await repoImageCallbackTokenHash("vercel-callback-token"),
+      callbackTokenExpiresAt: Date.now() + 60_000,
+    });
+    await store.bindProviderSession("img-vercel-missing-token", "vercel", "vercel-session-1");
+
+    const response = await handleRequest(
+      new Request("https://test.local/repo-images/build-failed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          build_id: "img-vercel-missing-token",
+          provider_session_id: "vercel-session-1",
+          error: "setup failed",
+        }),
+      }),
+      vercelEnv()
+    );
+
+    expect(response.status).toBe(401);
+    const status = await store.getStatus("acme", "repo");
+    const build = status.find((row) => row.id === "img-vercel-missing-token");
+    expect(build!.status).toBe("building");
+    expect(build!.callback_token_used_at).toBeNull();
+  });
+
+  it("POST /repo-images/build-failed rejects Vercel callback session mismatch through the full router", async () => {
+    const token = "vercel-callback-token";
+    await store.registerBuild({
+      id: "img-vercel-session-mismatch",
+      repoOwner: "acme",
+      repoName: "repo",
+      provider: "vercel",
+      baseBranch: "main",
+      callbackTokenHash: await repoImageCallbackTokenHash(token),
+      callbackTokenExpiresAt: Date.now() + 60_000,
+    });
+    await store.bindProviderSession("img-vercel-session-mismatch", "vercel", "vercel-session-1");
+
+    const response = await handleRequest(
+      new Request("https://test.local/repo-images/build-failed", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          build_id: "img-vercel-session-mismatch",
+          provider_session_id: "other-vercel-session",
+          error: "setup failed",
+        }),
+      }),
+      vercelEnv()
+    );
+
+    expect(response.status).toBe(401);
+    const status = await store.getStatus("acme", "repo");
+    const build = status.find((row) => row.id === "img-vercel-session-mismatch");
+    expect(build!.status).toBe("building");
+    expect(build!.callback_token_used_at).toBeNull();
+  });
+
+  it("POST /repo-images/build-failed rejects Vercel callback replay through the full router", async () => {
+    const token = "vercel-callback-token";
+    await store.registerBuild({
+      id: "img-vercel-replay",
+      repoOwner: "acme",
+      repoName: "repo",
+      provider: "vercel",
+      baseBranch: "main",
+      callbackTokenHash: await repoImageCallbackTokenHash(token),
+      callbackTokenExpiresAt: Date.now() + 60_000,
+    });
+    await store.bindProviderSession("img-vercel-replay", "vercel", "vercel-session-1");
+
+    const makeRequest = () =>
+      new Request("https://test.local/repo-images/build-failed", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          build_id: "img-vercel-replay",
+          provider_session_id: "vercel-session-1",
+          error: "setup failed",
+        }),
+      });
+
+    const first = await handleRequest(makeRequest(), vercelEnv());
+    expect(first.status).toBe(200);
+
+    const replay = await handleRequest(makeRequest(), vercelEnv());
+    expect(replay.status).toBe(401);
   });
 
   it("GET /repo-images/status returns images for a repo", async () => {

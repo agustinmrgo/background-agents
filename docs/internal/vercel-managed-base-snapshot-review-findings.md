@@ -102,6 +102,22 @@ Resolution:
 - Made callback token consumption single-use.
 - Made ready/failed transitions provider-bound and conditional on `status = 'building'`.
 
+### Vercel Callback Router Authentication
+
+After moving Vercel to a per-build callback token, the repo-image callback routes still sat behind
+the global router's internal HMAC gate. That meant real Vercel runtime callbacks would be rejected
+before the route-level per-build token verification could run.
+
+Resolution:
+
+- Made only `/repo-images/build-complete` and `/repo-images/build-failed` public at the global
+  router layer.
+- Kept both routes self-authenticating in `repo-images.ts`.
+- Modal callbacks still require the existing internal HMAC inside the route handler.
+- Vercel callbacks require the per-build token plus matching `provider_session_id`.
+- Added full-router integration coverage for Vercel callback acceptance, missing token, mismatched
+  session, and replay rejection.
+
 ## Open Findings
 
 ### Repo Image Route Owns Provider Orchestration
