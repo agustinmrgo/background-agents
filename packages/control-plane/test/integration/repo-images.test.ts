@@ -320,6 +320,8 @@ describe("D1 RepoImageStore", () => {
 
 // ==================== HTTP Route Tests ====================
 
+const VERCEL_CALLBACK_TOKEN = "a".repeat(64);
+
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await generateInternalToken(env.INTERNAL_CALLBACK_SECRET!);
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -397,6 +399,16 @@ describe("Repo image HTTP routes", () => {
     expect(status[0].status).toBe("building");
   });
 
+  it("POST /repo-images/build-complete rejects unauthenticated Modal callbacks before parsing body", async () => {
+    const response = await SELF.fetch("https://test.local/repo-images/build-complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{",
+    });
+
+    expect(response.status).toBe(401);
+  });
+
   it("POST /repo-images/build-failed marks build as failed", async () => {
     await store.registerBuild({
       id: "img-test-2",
@@ -425,8 +437,18 @@ describe("Repo image HTTP routes", () => {
     expect(failed!.error_message).toBe("npm install failed");
   });
 
+  it("POST /repo-images/build-failed rejects unauthenticated Modal callbacks before parsing body", async () => {
+    const response = await SELF.fetch("https://test.local/repo-images/build-failed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{",
+    });
+
+    expect(response.status).toBe(401);
+  });
+
   it("POST /repo-images/build-failed accepts Vercel per-build callback auth through the full router", async () => {
-    const token = "vercel-callback-token";
+    const token = VERCEL_CALLBACK_TOKEN;
     await store.registerBuild({
       id: "img-vercel-failed",
       repoOwner: "acme",
@@ -469,7 +491,7 @@ describe("Repo image HTTP routes", () => {
       repoName: "repo",
       provider: "vercel",
       baseBranch: "main",
-      callbackTokenHash: await repoImageCallbackTokenHash("vercel-callback-token"),
+      callbackTokenHash: await repoImageCallbackTokenHash(VERCEL_CALLBACK_TOKEN),
       callbackTokenExpiresAt: Date.now() + 60_000,
     });
     await store.bindProviderSession("img-vercel-missing-token", "vercel", "vercel-session-1");
@@ -494,8 +516,24 @@ describe("Repo image HTTP routes", () => {
     expect(build!.callback_token_used_at).toBeNull();
   });
 
+  it("POST /repo-images/build-failed rejects malformed Vercel callback auth before parsing body", async () => {
+    const response = await handleRequest(
+      new Request("https://test.local/repo-images/build-failed", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer not-a-valid-callback-token",
+          "Content-Type": "application/json",
+        },
+        body: "{",
+      }),
+      vercelEnv()
+    );
+
+    expect(response.status).toBe(401);
+  });
+
   it("POST /repo-images/build-failed rejects Vercel callback session mismatch through the full router", async () => {
-    const token = "vercel-callback-token";
+    const token = VERCEL_CALLBACK_TOKEN;
     await store.registerBuild({
       id: "img-vercel-session-mismatch",
       repoOwner: "acme",
@@ -531,7 +569,7 @@ describe("Repo image HTTP routes", () => {
   });
 
   it("POST /repo-images/build-failed rejects Vercel callback replay through the full router", async () => {
-    const token = "vercel-callback-token";
+    const token = VERCEL_CALLBACK_TOKEN;
     await store.registerBuild({
       id: "img-vercel-replay",
       repoOwner: "acme",

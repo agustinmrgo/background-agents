@@ -118,6 +118,21 @@ Resolution:
 - Added full-router integration coverage for Vercel callback acceptance, missing token, mismatched
   session, and replay rejection.
 
+### Callback Body Parsing On Public Routes
+
+After making the callback routes public at the global router layer, the route handlers parsed JSON
+before route-level authentication. That did not bypass callback credentials, but it created avoidable
+unauthenticated parsing work on public endpoints.
+
+Resolution:
+
+- Moved Modal callback HMAC authentication before JSON parsing.
+- Added a Vercel pre-parse bearer-token shape check before JSON parsing.
+- Kept Vercel's D1-backed single-use callback token and `provider_session_id` verification after
+  parsing because that verification depends on callback body fields.
+- Added full-router regression coverage for unauthenticated Modal callbacks with malformed bodies
+  and malformed Vercel callback bearer tokens.
+
 ## Open Findings
 
 ### Repo Image Route Owns Provider Orchestration

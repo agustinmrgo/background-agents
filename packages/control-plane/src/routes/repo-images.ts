@@ -36,6 +36,7 @@ import {
 
 const logger = createLogger("router:repo-images");
 const VERCEL_CALLBACK_TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
+const VERCEL_CALLBACK_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 
 function requireRepoImages(env: Env): Response | null {
   if (supportsRepoImageBackend(env.SANDBOX_PROVIDER)) {
@@ -129,6 +130,35 @@ function getBearerToken(request: Request): string | null {
   return token || null;
 }
 
+function getVercelCallbackBearerToken(request: Request): string | null {
+  const token = getBearerToken(request);
+  if (!token || !VERCEL_CALLBACK_TOKEN_PATTERN.test(token)) return null;
+  return token;
+}
+
+function requireVercelCallbackBearerAuth(request: Request, ctx: RequestContext): Response | null {
+  if (getVercelCallbackBearerToken(request)) return null;
+
+  logger.warn("repo_image.callback_auth_failed", {
+    request_id: ctx.request_id,
+    trace_id: ctx.trace_id,
+  });
+  return error("Unauthorized", 401);
+}
+
+async function requireCallbackPreParseAuth(
+  request: Request,
+  env: Env,
+  backend: "modal" | "vercel",
+  ctx: RequestContext
+): Promise<Response | null> {
+  if (backend === "modal") {
+    return requireBuildCallbackAuth(request, env, ctx);
+  }
+
+  return requireVercelCallbackBearerAuth(request, ctx);
+}
+
 async function requireVercelBuildCallbackAuth(
   request: Request,
   env: Env,
@@ -136,7 +166,7 @@ async function requireVercelBuildCallbackAuth(
   params: { buildId: string; providerSessionId: string },
   ctx: RequestContext
 ): Promise<Response | null> {
-  const token = getBearerToken(request);
+  const token = getVercelCallbackBearerToken(request);
   if (!token) {
     logger.warn("repo_image.callback_auth_failed", {
       build_id: params.buildId,
@@ -198,6 +228,10 @@ async function handleBuildComplete(
     return error("Database not configured", 503);
   }
 
+  const backend = getRepoImageBackend(env);
+  const preParseAuthError = await requireCallbackPreParseAuth(request, env, backend, ctx);
+  if (preParseAuthError) return preParseAuthError;
+
   const body = await parseJsonBody<{
     build_id?: string;
     provider_image_id?: string;
@@ -217,7 +251,6 @@ async function handleBuildComplete(
     return error("build_id is required", 400);
   }
 
-  const backend = getRepoImageBackend(env);
   const store = new RepoImageStore(env.DB);
 
   if (backend === "vercel") {
@@ -259,9 +292,6 @@ async function handleBuildComplete(
 
     return json({ ok: true, snapshotPending: true });
   }
-
-  const authError = await requireBuildCallbackAuth(request, env, ctx);
-  if (authError) return authError;
 
   if (!providerImageId) {
     return error("provider_image_id is required", 400);
@@ -465,6 +495,10 @@ async function handleBuildFailed(
     return error("Database not configured", 503);
   }
 
+  const backend = getRepoImageBackend(env);
+  const preParseAuthError = await requireCallbackPreParseAuth(request, env, backend, ctx);
+  if (preParseAuthError) return preParseAuthError;
+
   const body = await parseJsonBody<{
     build_id?: string;
     provider_session_id?: string;
@@ -478,7 +512,6 @@ async function handleBuildFailed(
   }
 
   const store = new RepoImageStore(env.DB);
-  const backend = getRepoImageBackend(env);
 
   if (backend === "vercel") {
     if (!body.provider_session_id) {
@@ -492,9 +525,6 @@ async function handleBuildFailed(
       { buildId, providerSessionId: body.provider_session_id },
       ctx
     );
-    if (authError) return authError;
-  } else {
-    const authError = await requireBuildCallbackAuth(request, env, ctx);
     if (authError) return authError;
   }
 

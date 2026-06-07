@@ -12,6 +12,8 @@ const vercelClient = vi.hoisted(() => ({
   deleteSnapshot: vi.fn(),
 }));
 
+const VERCEL_CALLBACK_TOKEN = "a".repeat(64);
+
 vi.mock("../sandbox/vercel-client", async (importOriginal) => {
   const actual = await importOriginal<typeof VercelClientModule>();
   return {
@@ -148,7 +150,7 @@ describe("repo image routes", () => {
 
   it("snapshots Vercel repo image builds outside the build sandbox before marking ready", async () => {
     const waitUntilPromises: Promise<unknown>[] = [];
-    const token = "callback-token";
+    const token = VERCEL_CALLBACK_TOKEN;
     const tokenHash = await computeHmacHex(`repo-image-callback:${token}`, "callback-secret");
     const row: RepoImageRow = {
       id: "build-1",
@@ -210,7 +212,7 @@ describe("repo image routes", () => {
   });
 
   it("rejects Vercel callbacks for an unbound provider session", async () => {
-    const token = "callback-token";
+    const token = VERCEL_CALLBACK_TOKEN;
     const tokenHash = await computeHmacHex(`repo-image-callback:${token}`, "callback-secret");
     const row: RepoImageRow = {
       id: "build-1",
