@@ -650,56 +650,69 @@ async function handleTriggerBuild(
       }
     }
 
-    if (backend === "modal") {
-      if (!env.MODAL_API_SECRET || !env.MODAL_WORKSPACE) {
-        return error("Modal configuration not available", 503);
+    switch (backend) {
+      case "modal": {
+        if (!env.MODAL_API_SECRET || !env.MODAL_WORKSPACE) {
+          return error("Modal configuration not available", 503);
+        }
+        const client = createModalClient(
+          env.MODAL_API_SECRET,
+          env.MODAL_WORKSPACE,
+          env.MODAL_ENVIRONMENT_WEB_SUFFIX
+        );
+        await client.buildRepoImage(
+          {
+            repoOwner: owner,
+            repoName: name,
+            defaultBranch: "main",
+            buildId,
+            callbackUrl,
+            userEnvVars,
+          },
+          { trace_id: ctx.trace_id, request_id: ctx.request_id }
+        );
+        break;
       }
-      const client = createModalClient(
-        env.MODAL_API_SECRET,
-        env.MODAL_WORKSPACE,
-        env.MODAL_ENVIRONMENT_WEB_SUFFIX
-      );
-      await client.buildRepoImage(
-        {
+      case "vercel": {
+        if (!callbackToken) {
+          throw new Error("Vercel callback token was not generated");
+        }
+
+        let cloneToken: string | undefined;
+        try {
+          const provider = createRouteSourceControlProvider(env);
+          const auth = await provider.generateCredentialHelperAuth();
+          cloneToken = auth.password;
+        } catch (e) {
+          logger.warn("repo_image.clone_token_failed", {
+            error: e instanceof Error ? e.message : String(e),
+            repo_owner: owner,
+            repo_name: name,
+          });
+        }
+        await createConfiguredVercelProvider(env).triggerRepoImageBuild({
           repoOwner: owner,
           repoName: name,
           defaultBranch: "main",
           buildId,
           callbackUrl,
+          callbackToken,
           userEnvVars,
-        },
-        { trace_id: ctx.trace_id, request_id: ctx.request_id }
-      );
-    } else {
-      let cloneToken: string | undefined;
-      try {
-        const provider = createRouteSourceControlProvider(env);
-        const auth = await provider.generateCredentialHelperAuth();
-        cloneToken = auth.password;
-      } catch (e) {
-        logger.warn("repo_image.clone_token_failed", {
-          error: e instanceof Error ? e.message : String(e),
-          repo_owner: owner,
-          repo_name: name,
+          cloneToken,
+          onProviderSessionCreated: async (providerSessionId) => {
+            const bound = await store.bindProviderSession(buildId, "vercel", providerSessionId);
+            if (!bound) {
+              throw new Error("Failed to bind Vercel build session");
+            }
+          },
+          correlation: { trace_id: ctx.trace_id, request_id: ctx.request_id },
         });
+        break;
       }
-      await createConfiguredVercelProvider(env).triggerRepoImageBuild({
-        repoOwner: owner,
-        repoName: name,
-        defaultBranch: "main",
-        buildId,
-        callbackUrl,
-        callbackToken: callbackToken!,
-        userEnvVars,
-        cloneToken,
-        onProviderSessionCreated: async (providerSessionId) => {
-          const bound = await store.bindProviderSession(buildId, "vercel", providerSessionId);
-          if (!bound) {
-            throw new Error("Failed to bind Vercel build session");
-          }
-        },
-        correlation: { trace_id: ctx.trace_id, request_id: ctx.request_id },
-      });
+      default: {
+        const unsupportedBackend: never = backend;
+        return error(`Repo image builds are not supported for provider ${unsupportedBackend}`, 501);
+      }
     }
 
     logger.info("repo_image.build_triggered", {
