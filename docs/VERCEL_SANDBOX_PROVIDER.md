@@ -20,6 +20,12 @@ sandbox_provider          = "vercel"
 vercel_sandbox_token      = "..."
 vercel_sandbox_project_id = "prj_..."
 # vercel_sandbox_team_id  = "team_..." # optional for team projects
+
+# Optional runtime settings
+# vercel_sandbox_runtime        = "node24"
+# vercel_runtime_repo_url       = "https://github.com/ColeMurray/background-agents.git"
+# vercel_runtime_repo_ref       = "main"
+# vercel_snapshot_expiration_ms = 0
 ```
 
 For GitHub Actions-based deployment, configure the matching repository secrets:
@@ -31,7 +37,7 @@ VERCEL_SANDBOX_PROJECT_ID
 VERCEL_SANDBOX_TEAM_ID # optional
 ```
 
-Optional runtime settings:
+Optional GitHub Actions runtime settings:
 
 ```text
 VERCEL_SANDBOX_RUNTIME=node24
@@ -40,8 +46,12 @@ VERCEL_RUNTIME_REPO_REF=main
 VERCEL_SNAPSHOT_EXPIRATION_MS=0
 ```
 
+`VERCEL_SANDBOX_API_BASE_URL` is also honored by the CI base-snapshot builder for advanced testing
+against a non-default Sandbox API endpoint. Normal deployments should leave it unset.
+
 `VERCEL_SNAPSHOT_EXPIRATION_MS` applies to repo/session snapshots created at runtime. `0` means no
-expiration. The managed base-runtime snapshot is created without expiration.
+expiration. The managed base-runtime snapshot is created without expiration, overriding Vercel's
+default snapshot expiration for that deploy artifact.
 
 ## Managed Base Runtime Snapshot
 
@@ -104,10 +114,9 @@ keep the current snapshot, and delete old snapshots manually if you need to recl
 Open-Inspect does not currently send a Vercel `resources` setting when creating sandboxes. Vercel
 therefore applies its default sandbox size.
 
-At the time this provider was added, Vercel documented the default as `2` vCPUs with memory tied to
-CPU at `2 GB` per vCPU, which gives the observed default of `2 vCPU / 4 GB RAM`. Vercel also
-documents `1`, `2`, `4`, and `8` vCPU options for standard sandbox configuration, with larger
-Enterprise configurations available separately.
+Vercel currently documents the unspecified default as `2 vCPU / 4 GB RAM`. Its pricing limits state
+that each vCPU includes `2 GB` of memory, with a maximum of `8` vCPUs and `16 GB` memory per
+sandbox. The `resources.vcpus` option can be used with `1`, `2`, `4`, or `8` vCPUs.
 
 If Open-Inspect needs to control this later, add a provider config value such as
 `VERCEL_SANDBOX_VCPUS`, thread it into the Vercel create-sandbox request as `resources.vcpus`, and
@@ -117,4 +126,4 @@ References:
 
 - [Vercel Sandbox pricing and limits](https://vercel.com/docs/vercel-sandbox/pricing)
 - [Vercel Sandbox REST API](https://vercel.com/docs/vercel-sandbox)
-- [Vercel Sandbox 32 vCPU / 64 GB RAM changelog](https://vercel.com/changelog/vercel-sandbox-now-supports-up-to-32-vcpu-64-gb-ram-configurations)
+- [Vercel Sandbox 1 vCPU / 2 GB RAM changelog](https://vercel.com/changelog/vercel-sandbox-now-supports-1-vcpu-2-gb-configurations)
